@@ -53,7 +53,7 @@ class ENC28J60
         *     @param  nChipSelectPin Arduino pin used for chip select (enable network interface SPI bus). Default = 8
         *     @return <i>uint8_t</i> ENC28J60 firmware version or zero on failure.
         */
-        byte Initialize(const byte* pMac, byte nChipSelectPin = 8);
+        byte Initialize(const byte* pMac, byte nChipSelectPin = 10);
 
         /**   @brief  Check if network link is connected
         *     @return <i>bool</i> True if link is up
@@ -117,11 +117,12 @@ class ENC28J60
         void DisableMulticast();
 
         /** @brief  Enables pattern match filter
-        *   @param  nOffset Offset of start of pattern matching, starting from first octet of destination address, i.e. start of Ethernet packet
+        *   @param  nOffset Offset of start of pattern matching, starting from first octet of destination address, i.e. start of Ethernet packet. Must be even (see note)
         *   @param  nChecksum Checksum of the 64 byte pattern to match.
         *   @param  nMask 64-bit mask. Set a bit to enable matching of corresponding octet Default is to match all 64 bytes
         *   @note   The pattern match filter selects up to 64 bytes from the incoming packet and calculates an IP checksum of the bytes. If this does not match the configured checksum, the packet is silently discarded.
         *   @note   The pattern match filter may be useful for filtering packets which have expected data inside them.
+        *   @note   nOffset must be even. To ensure this, the least significant bit is cleared which may result in searching from one octet lower than specified.
         */
         void EnablePatternMatch(uint16_t nOffset, uint16_t nChecksum,  uint64_t nMask = 0xFFFFFFFF);
 
@@ -235,7 +236,12 @@ class ENC28J60
         */
         void TxClearError();
 
-    private:
+        /** @brief  Sets LED mode
+        *   @param  nMode LED mode
+        */
+        void SetLedMode(uint16_t nMode);
+
+//    private:
         //SPI functions
         /** @brief  Initialise SPI interface
         *   @note   Configures Arduino pins as input / output, configures SPI interface, etc.
@@ -249,8 +255,13 @@ class ENC28J60
         */
         byte SPITransfer(byte nData = 0);
 
+        /** @brief  Set bank in ENC28J60
+        *   @param  nAddress Bank encoded in bits 5-6 of address
+        */
+        void SPISetBank(byte nAddress);
+
         /** @brief  Read control register from SPI
-        *   @param  nRegister Control register to read
+        *   @param  nRegister Control register to read coded as: MII/MAC flag[7], Bank[5-6], register[0-4]
         *   @return <i>byte</i> Value read from interface
         */
         byte SPIReadRegister(byte nRegister);
@@ -273,21 +284,21 @@ class ENC28J60
         */
         void SPIWriteBuf(byte* pData, uint16_t nLen);
 
-        /** @brief  Set bit(s) in SPI control register
+        /** @brief  Set bits in SPI control register
         *   @param  nRegister Register to modify
         *   @param  nBits Bits to set
         *   @note   nBits is logically ORed with content of register
         *   @note   May only be used for Ethernet registers <b>not</b> MAC or MII registers
         */
-        void SPISetBit(byte nRegister, byte nBits);
+        void SPISetBits(byte nRegister, byte nBits);
 
-        /** @brief  Clear bit in SPI control register
+        /** @brief  Clear bits in SPI control register
         *   @param  nRegister Register to modify
         *   @param  nBits Bits to clear
         *   @note   nBits is logically NOTANDed with the content of register
         *   @note   May only be used for Ethernet registers <b>not</b> MAC or MII registers
         */
-        void SPIClearBit(byte nRegister, byte nBits);
+        void SPIClearBits(byte nRegister, byte nBits);
 
         /** @brief  Reset NIC
         */
@@ -301,31 +312,14 @@ class ENC28J60
         */
         void DisableChip();
 
-        /** @brief  Set bank in ENC28J60
-        *   @param  nAddress Bank address
-        */
-        void SetBank(byte nAddress);
-
-        /** @brief  Read byte from register
-        *   @param  nAddress Register address
-        *   @return <i>byte</i> Register value
-        */
-        byte ReadRegByte(byte nAddress);
-
         /** @brief  Read 16-bit word from register
         *   @param  nAddress Register address
         *   @return <i>uint16_t</i> Register value
         */
         uint16_t ReadRegWord(byte nAddress);
 
-        /** @brief  Write 8-bit byte to register
-        *   @param  nAddress register address
-        *   @param  nData Register value
-        */
-        void WriteRegByte(byte nAddress, byte nData);
-
         /** @brief  Write 16-bit word to register
-        *   @param  nAddress register address
+        *   @param  nAddress Register address
         *   @param  nData Register value
         */
         void WriteRegWord(byte nAddress, uint16_t nData);

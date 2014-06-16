@@ -1,7 +1,7 @@
 // Microchip ENC28J60 Ethernet Interface Driver
 // Derived from work by Guido Socher
 // Adapted by Brian Walton
-// Copyright: LGPL V2
+// Copyright: LGPL V3
 //
 // Based on the enc28j60.c file from the AVRlib library by Pascal Stang.
 // For AVRlib See http://www.procyonengineering.com/
@@ -138,14 +138,14 @@ static const uint16_t ECON2_PKTDEC   = 0x40; //!< Packet Decrement bit
 static const uint16_t ECON2_PWRSV    = 0x20; //!< Power save enable bit
 static const uint16_t ECON2_VRPS     = 0x08; //!< Voltage regulator power save enable bit
 // ENC28J60 ECON1 Register Bit Definitions
-static const uint16_t ECON1_TXRST    = 0x80; //!< Transmit logic reset bit
-static const uint16_t ECON1_RXRST    = 0x40; //!< Recieve logic reset bit
-static const uint16_t ECON1_DMAST    = 0x20; //!< DMA start and busy status bit
-static const uint16_t ECON1_CSUMEN   = 0x10; //!< DMA checksum enable bit
-static const uint16_t ECON1_TXRTS    = 0x08; //!< Transmit request to send bit
-static const uint16_t ECON1_RXEN     = 0x04; //!< Recieve enable bit
-static const uint16_t ECON1_BSEL1    = 0x02; //!< Bank select bit 1
-static const uint16_t ECON1_BSEL0    = 0x01; //!< Bank select bit 0
+static const byte ECON1_TXRST    = 0x80; //!< Transmit logic reset bit
+static const byte ECON1_RXRST    = 0x40; //!< Recieve logic reset bit
+static const byte ECON1_DMAST    = 0x20; //!< DMA start and busy status bit
+static const byte ECON1_CSUMEN   = 0x10; //!< DMA checksum enable bit (erata B7.17 - do not use during packet reception)
+static const byte ECON1_TXRTS    = 0x08; //!< Transmit request to send bit
+static const byte ECON1_RXEN     = 0x04; //!< Recieve enable bit
+static const byte ECON1_BSEL1    = 0x02; //!< Bank select bit 1
+static const byte ECON1_BSEL0    = 0x01; //!< Bank select bit 0
 // ENC28J60 MACON1 Register Bit Definitions
 static const uint16_t MACON1_LOOPBK  = 0x10;
 static const uint16_t MACON1_TXPAUS  = 0x08;
@@ -187,15 +187,15 @@ static const uint16_t EBSTCON_TME    = 0x02;
 static const uint16_t EBSTCON_BISTST = 0x01;
 
 // PHY registers
-static const uint16_t PHCON1         = 0x00; //!< PHY control register
-static const uint16_t PHSTAT1        = 0x01; //!< Physical layer status register 1
-static const uint16_t PHHID1         = 0x02;
-static const uint16_t PHHID2         = 0x03;
-static const uint16_t PHCON2         = 0x10; //!< PHY control register 2
-static const uint16_t PHSTAT2        = 0x11; //!< Physical layer status register 2
-static const uint16_t PHIE           = 0x12; //!< PHY interrupt enable register
-static const uint16_t PHIR           = 0x13; //!< PHY interrupt request (flag) register
-static const uint16_t PHLCON         = 0x14;
+static const byte PHCON1         = 0x00; //!< PHY control register
+static const byte PHSTAT1        = 0x01; //!< Physical layer status register 1
+static const byte PHHID1         = 0x02; //!< PHY identifier (bits 3-18) = 0x0083
+static const byte PHHID2         = 0x03; //!< PHY identifier(bits 19-24) = 0x05, PHY P/N = 0x00, PHY revision = 0x00
+static const byte PHCON2         = 0x10; //!< PHY control register 2
+static const byte PHSTAT2        = 0x11; //!< Physical layer status register 2
+static const byte PHIE           = 0x12; //!< PHY interrupt enable register
+static const byte PHIR           = 0x13; //!< PHY interrupt request (flag) register
+static const byte PHLCON         = 0x14; //!< PHY LED control register
 
 // ENC28J60 PHY PHCON1 Register Bit Definitions
 static const uint16_t PHCON1_PRST    = 0x8000;
@@ -207,6 +207,13 @@ static const uint16_t PHSTAT1_PFDPX  = 0x1000;
 static const uint16_t PHSTAT1_PHDPX  = 0x0800;
 static const uint16_t PHSTAT1_LLSTAT = 0x0004;
 static const uint16_t PHSTAT1_JBSTAT = 0x0002;
+// ENC28J60 PHT PHSTAT2 Register Bit Definitions
+static const uint16_t PHSTAT2_TXSTAT    = 0x2000; //!< PHY transmit status bit
+static const uint16_t PHSTAT2_RXSTAT    = 0x1000; //!< PHY revieve status bit
+static const uint16_t PHSTAT2_COLSTAT   = 0x0800; //!< PHY collision status bit
+static const uint16_t PHSTAT2_LSTAT     = 0x0400; //!< PHY link status status bit
+static const uint16_t PHSTAT2_DPXSTAT   = 0x0200; //!< PHY duplex status bit
+static const uint16_t PHSTAT2_PLRITY    = 0x0020; //!< PHY polarity status bit
 // ENC28J60 PHY PHCON2 Register Bit Definitions
 static const uint16_t PHCON2_FRCLINK = 0x4000;
 static const uint16_t PHCON2_TXDIS   = 0x2000;
@@ -214,10 +221,10 @@ static const uint16_t PHCON2_JABBER  = 0x0400;
 static const uint16_t PHCON2_HDLDIS  = 0x0100;
 
 // ENC28J60 Packet Control Byte Bit Definitions
-static const uint16_t PKTCTRL_PHUGEEN   = 0x08;
-static const uint16_t PKTCTRL_PPADEN    = 0x04;
-static const uint16_t PKTCTRL_PCRCEN    = 0x02;
-static const uint16_t PKTCTRL_POVERRIDE = 0x01;
+static const byte PKTCTRL_PHUGEEN   = 0x08;
+static const byte PKTCTRL_PPADEN    = 0x04;
+static const byte PKTCTRL_PCRCEN    = 0x02;
+static const byte PKTCTRL_POVERRIDE = 0x01;
 
 // ENC28J60 SPI instruction set
 static const byte SPI_OPCODE_MASK   = 0xe0; //!< Bitwise mask of SPI opcode (3 most significant bits of first instruction byte)
@@ -231,7 +238,7 @@ static const byte ENC28J60_SPI_BFC  = 0xA0; //!< Bit field clear
 static const byte ENC28J60_SPI_SC   = 0xFF; //!< System command (soft reset)
 
 //Used to configure NIC 8K RAM
-static const uint16_t RX_BUFFER_START   = 0; //!< Start of recieve circular buffer
+static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
 static const uint16_t TX_BUFFER_START   = 0x1A0C; //!< Start of transmit buffer which gives space for 1 packet
 static const uint16_t TX_BUFFER_END     = 0x1FFF; //!< End of transmit buffer which is end of available memory
 
@@ -239,6 +246,7 @@ static const uint16_t MAX_FRAMELEN      = 1518; //!< Maximum frame length
 
 void ENC28J60::SPIInit()
 {
+    Serial.println("Initialise SPI");
     pinMode(SS, OUTPUT);
     digitalWrite(SS, HIGH);
     pinMode(MOSI, OUTPUT);
@@ -262,14 +270,35 @@ byte ENC28J60::SPITransfer(byte data)
     return SPDR;
 }
 
+void ENC28J60::SPISetBank(byte nAddress)
+{
+    if(((nAddress & BANK_MASK) != m_nBank) && ((nAddress & SPI_ARGUMENT_MASK) < EIE)) //only switch bank if not already selected and not a common register
+    {
+        EnableChip();
+        SPIClearBits(ECON1, ECON1_BSEL1 | ECON1_BSEL0); //Clear bank selection (select bank 0)
+        m_nBank = nAddress & BANK_MASK; //Decode bank from address (bits 5-6)
+        SPISetBits(ECON1, m_nBank >> 5); //Set bank (BSEL0/1 are bits 0/1)
+        DisableChip();
+//        Serial.print("Select bank ");
+//        Serial.print("[");
+//        Serial.print(m_nBank >> 5);
+//        Serial.print("]");
+    }
+}
+
 byte ENC28J60::SPIReadRegister(byte nRegister)
 {
+    SPISetBank(nRegister);
     EnableChip();
     SPITransfer(ENC28J60_SPI_RCR | (nRegister & SPI_ARGUMENT_MASK));
     byte nResult = SPITransfer();
     if(nRegister & MACMII_MASK)
         nResult = SPITransfer(); //If MAC or MII register, use second byte (after dummy first byte)
     DisableChip();
+//    Serial.print("Read value 0x");
+//    Serial.print(nResult, HEX);
+//    Serial.print(" from register 0x");
+//    Serial.println(nRegister & SPI_ARGUMENT_MASK, HEX);
     return nResult;
 }
 
@@ -284,10 +313,15 @@ void ENC28J60::SPIReadBuf(byte* pData, uint16_t nLen)
 
 void ENC28J60::SPIWriteReg(byte nRegister, byte nData)
 {
+    SPISetBank(nRegister);
     EnableChip();
-    SPITransfer(ENC28J60_SPI_WCR | nRegister);
+    SPITransfer(ENC28J60_SPI_WCR | (nRegister & SPI_ARGUMENT_MASK));
     SPITransfer(nData);
     DisableChip();
+//    Serial.print("Write value 0x");
+//    Serial.print(nData, HEX);
+//    Serial.print(" to register 0x");
+//    Serial.println(nRegister & SPI_ARGUMENT_MASK, HEX);
 }
 
 void ENC28J60::SPIWriteBuf(byte* pData, uint16_t nLen)
@@ -299,28 +333,31 @@ void ENC28J60::SPIWriteBuf(byte* pData, uint16_t nLen)
     DisableChip();
 }
 
-void ENC28J60::SPISetBit(byte nRegister, byte nBits)
+void ENC28J60::SPISetBits(byte nRegister, byte nBits)
 {
+    SPISetBank(nRegister);
     EnableChip();
-    SPITransfer(ENC28J60_SPI_BFS | nRegister);
+    SPITransfer(ENC28J60_SPI_BFS | (nRegister & SPI_ARGUMENT_MASK));
     SPITransfer(nBits);
     DisableChip();
 }
 
-void ENC28J60::SPIClearBit(byte nRegister, byte nBits)
+void ENC28J60::SPIClearBits(byte nRegister, byte nBits)
 {
+    SPISetBank(nRegister);
     EnableChip();
-    SPITransfer(ENC28J60_SPI_BFC | nRegister);
+    SPITransfer(ENC28J60_SPI_BFC | (nRegister & SPI_ARGUMENT_MASK));
     SPITransfer(nBits);
     DisableChip();
 }
 
 void ENC28J60::SPIReset()
 {
+    PowerUp(); //erata B7.19 - reset does not work when in power save mode
     EnableChip();
     SPITransfer(ENC28J60_SPI_SC);
     DisableChip();
-    delayMicroseconds(50);
+    delay(1); //erata B7.2
 }
 
 void ENC28J60::EnableChip()
@@ -335,70 +372,49 @@ void ENC28J60::DisableChip()
     sei();
 }
 
-void ENC28J60::SetBank(byte nAddress)
-{
-    if(((nAddress & BANK_MASK) != m_nBank) && ((nAddress & SPI_ARGUMENT_MASK) < EIE)) //only switch bank if not already selected and not a common register
-    {
-        SPIClearBit(ECON1, ECON1_BSEL1 | ECON1_BSEL0);
-        m_nBank = nAddress & BANK_MASK;
-        SPISetBit(ECON1, m_nBank >> 5);
-    }
-}
-
-byte ENC28J60::ReadRegByte(byte nAddress)
-{
-    SetBank(nAddress);
-    return SPIReadRegister(nAddress);
-}
-
 uint16_t ENC28J60::ReadRegWord(byte nAddress)
 {
-    return ReadRegByte(nAddress) + (ReadRegByte(nAddress+1) << 8);
-}
-
-void ENC28J60::WriteRegByte(byte nAddress, byte nData)
-{
-    SetBank(nAddress);
-    SPIWriteReg(ENC28J60_SPI_WCR | nAddress, nData);
+    return SPIReadRegister(nAddress) + (SPIReadRegister(nAddress+1) << 8);
 }
 
 void ENC28J60::WriteRegWord(byte nAddress, uint16_t nData)
 {
-    WriteRegByte(nAddress, nData);
-    WriteRegByte(nAddress + 1, nData >> 8);
+    SPIWriteReg(nAddress, (byte)(nData & 0x00FF));
+    SPIWriteReg(nAddress + 1, (byte)(nData >> 8));
 }
 
 uint16_t ENC28J60::ReadPhyWord(byte nAddress)
 {
     //1. Write the address of the PHY register to read from into the MIREGADR register.
-    WriteRegByte(MIREGADR, nAddress);
+    SPIWriteReg(MIREGADR, nAddress);
     //2. Set the MICMD.MIIRD bit. The read operation begins and the MISTAT.BUSY bit is set.
-    SPISetBit(MICMD, MICMD_MIIRD);
+    SPISetBits(MICMD, MICMD_MIIRD);
     //3. Wait 10.24μs. Poll the MISTAT.BUSY bit to be certain that the operation is complete.
-    while(ReadRegByte(MISTAT) & MISTAT_BUSY)
+    while(SPIReadRegister(MISTAT) & MISTAT_BUSY)
         ;
     //4. Clear the MICMD.MIIRD bit.
-    SPIClearBit(MICMD, MICMD_MIIRD);
+    SPIClearBits(MICMD, MICMD_MIIRD);
     //5. Read the desired data from the MIRDL and MIRDH registers.
     return ReadRegWord(MIRD);
 }
 
 void ENC28J60::WritePhyWord(byte nAddress, uint16_t nData)
 {
-    //1. Write the address of the PHY register to write to into the MIREGADR register.
-    WriteRegByte(MIREGADR, nAddress);
+    //1. Write the address of the PHY register to into the MIREGADR register.
+    SPIWriteReg(MIREGADR, nAddress);
     //2. Write the lower 8 bits of data to write into the MIWRL register.
     //3. Write the upper 8 bits of data to write into the MIWRH register. Writing to this register automatically begins the MII transaction, so it must be written to after MIWRL.
     WriteRegWord(MIWR, nData);
     //   The MISTAT.BUSY bit becomes set. The PHY register will be written after the MII operation completes, which takes 10.24μs.
     //   When the write operation has completed, the BUSY bit will clear itself. The host controller should not start any MIISCAN or MIIRD operations while busy.
-    while(ReadRegByte(MISTAT) & MISTAT_BUSY)
-        ; //!@todo Timeout
+    while(SPIReadRegister(MISTAT) & MISTAT_BUSY)
+        ;
 }
 
 byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
 {
-    m_bBroadcastEnabled = false;
+    m_nBank = 0xFF; //Set bank to invalid value to ensure initial bank selection
+    m_bBroadcastEnabled = true;
     if(bitRead(SPCR, SPE) == 0)
         SPIInit();
     m_nSelectPin = nChipSelectPin;
@@ -406,8 +422,6 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     DisableChip();
 
     SPIReset();
-    while (!SPIReadRegister(ESTAT) & ESTAT_CLKRDY)
-        ;
 
     m_rxHeader.nNextPacket = RX_BUFFER_START;
     m_rxHeader.nSize = 0;
@@ -418,59 +432,55 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     WriteRegWord(ERXND, TX_BUFFER_START - 1);
     WriteRegWord(ETXST, TX_BUFFER_START);
     WriteRegWord(ETXND, TX_BUFFER_END);
-    //!@todo Configure all relevant ERXFCON bits during initialisation, not just ERXFCON_BCEN
-    //!@todo I don't think we need to enable broadcasts by default. This should be done by a protocol that requires it, e.g. ARP
-    EnableBroadcast();
     WriteRegWord(EPMM0, 0x303f);
     WriteRegWord(EPMCS, 0xf7f9);
-    WriteRegByte(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
-    WriteRegByte(MACON2, 0x00);
-    SPISetBit(MACON3, MACON3_PADCFG0|MACON3_TXCRCEN|MACON3_FRMLNEN);
+    SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
+    SPIWriteReg(MACON2, 0x00);
+    SPISetBits(MACON3, MACON3_PADCFG0|MACON3_TXCRCEN|MACON3_FRMLNEN);
     WriteRegWord(MAIPG, 0x0C12);
-    WriteRegByte(MABBIPG, 0x12);
+    SPIWriteReg(MABBIPG, 0x12);
     WriteRegWord(MAMXFL, MAX_FRAMELEN);
-    WriteRegByte(MAADR5, pMac[0]);
-    WriteRegByte(MAADR4, pMac[1]);
-    WriteRegByte(MAADR3, pMac[2]);
-    WriteRegByte(MAADR2, pMac[3]);
-    WriteRegByte(MAADR1, pMac[4]);
-    WriteRegByte(MAADR0, pMac[5]);
+    SPIWriteReg(MAADR5, pMac[0]);
+    SPIWriteReg(MAADR4, pMac[1]);
+    SPIWriteReg(MAADR3, pMac[2]);
+    SPIWriteReg(MAADR2, pMac[3]);
+    SPIWriteReg(MAADR1, pMac[4]);
+    SPIWriteReg(MAADR0, pMac[5]);
     WritePhyWord(PHCON2, PHCON2_HDLDIS);
-    SetBank(ECON1);
-    SPISetBit(EIE, EIE_INTIE | EIE_PKTIE);
-    SPISetBit(ECON1, ECON1_RXEN);
+    SPISetBits(EIE, EIE_INTIE | EIE_PKTIE);
+    SPISetBits(ECON1, ECON1_RXEN);
+    EnableBroadcast(); //!@todo Docs say this is enabled by default - check if this is true
 
-    byte rev = ReadRegByte(EREVID);
+    byte nRevision = SPIReadRegister(EREVID);
     // microchip forgot to step the number on the silcon when they
     // released the revision B7. 6 is now rev B7. We still have
     // to see what they do when they release B8. At the moment
     // there is no B8 out yet
-    if (rev > 5) ++rev;
-    return rev;
+    if(nRevision > 5) ++nRevision;
+    return nRevision;
 }
 
 bool ENC28J60::IsLinkUp()
 {
-    return (ReadPhyWord(PHSTAT2) >> 2) & 1;
+    return(ReadPhyWord(PHSTAT2) & PHSTAT2_LSTAT);
 }
 
 void ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
 {
     while(SPIReadRegister(ECON1) & ECON1_TXRTS)
         ; //Wait for transmission to complete
-    if(ReadRegByte(EIR) & EIR_TXERIF) //Tx aborted
-        {
-            //Reset Tx, i.e. abort transmission
-            //!@todo It is not clear why we pulse TXRST here
-            SPISetBit(ECON1, ECON1_TXRST);
-            SPIClearBit(ECON1, ECON1_TXRST);
-        }
+    if(SPIReadRegister(EIR) & EIR_TXERIF) //Tx aborted
+    {
+        //Reset Tx, i.e. abort transmission
+        SPISetBits(ECON1, ECON1_TXRST);
+        SPIClearBits(ECON1, ECON1_TXRST);
+    }
     WriteRegWord(EWRPT, TX_BUFFER_START); //Reset to start of Tx buffer
     WriteRegWord(ETXND, TX_BUFFER_START + nLen); //Set length of packet
     //Write to Tx buffer
     SPIWriteReg(ENC28J60_SPI_WBM, 0); //Reset control word to use default send configuration
     SPIWriteBuf(pBuffer, nLen); //Write data to Tx buffer
-    SPISetBit(ECON1, ECON1_TXRTS); //Start transmission
+    SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
 }
 
 uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
@@ -482,36 +492,45 @@ uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
     return nLen;
 }
 
-//                  /2011/07/putting-enc28j60-ethernet-controler-in-sleep-mode/
 void ENC28J60::PowerDown()
 {
-    SPIClearBit(ECON1, ECON1_RXEN);
-    while(ReadRegByte(ESTAT) & ESTAT_RXBUSY);
-    while(ReadRegByte(ECON1) & ECON1_TXRTS);
-    SPISetBit(ECON2, ECON2_VRPS);
-    SPISetBit(ECON2, ECON2_PWRSV);
+    //1. Turn off packet reception by clearing ECON1.RXEN.
+    SPIClearBits(ECON1, ECON1_RXEN);
+    //2. Wait for any in-progress packets to finish being received by polling ESTAT.RXBUSY. This bit should be clear before proceeding.
+    while(SPIReadRegister(ESTAT) & ESTAT_RXBUSY)
+        ;
+    //3. Wait for any current transmissions to end by confirming ECON1.TXRTS is clear.
+    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
+        ;
+    //4. Set ECON2.VRPS (if not already set).
+    //5. Enter Sleep by setting ECON2.PWRSV. AllMAC, MII and PHY registers become inaccessible as a result. Setting PWRSV also clears ESTAT.CLKRDY automatically.
+    SPISetBits(ECON2, ECON2_VRPS | ECON2_PWRSV);
 }
 
 void ENC28J60::PowerUp()
 {
-    SPIClearBit(ECON2, ECON2_PWRSV);
-    while(!ReadRegByte(ESTAT) & ESTAT_CLKRDY);
-    SPISetBit(ECON1, ECON1_RXEN);
+    //1. Wake-up by clearing ECON2.PWRSV.
+    SPIClearBits(ECON2, ECON2_PWRSV);
+    //2. Wait at least 300us for the PHY to stabilize. To accomplish the delay, the host controller may poll ESTAT.CLKRDY and wait for it to become set.
+    while(!SPIReadRegister(ESTAT) & ESTAT_CLKRDY)
+        ;
+    //3. Restore receive capability by setting ECON1.RXEN.
+    SPISetBits(ECON1, ECON1_RXEN);
 }
 
 void ENC28J60::EnableUnicast()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) | ERXFCON_UCEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) | ERXFCON_UCEN);
 }
 
 void ENC28J60::DisableUnicast()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) & ~ERXFCON_UCEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_UCEN);
 }
 
 void ENC28J60::EnableBroadcast(bool bTemporary)
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) | ERXFCON_BCEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) | ERXFCON_BCEN);
     if(!bTemporary)
         m_bBroadcastEnabled = true;
 }
@@ -521,23 +540,23 @@ void ENC28J60::DisableBroadcast(bool bTemporary)
     if(!bTemporary)
         m_bBroadcastEnabled = false;
     if(!m_bBroadcastEnabled)
-        WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) & ~ERXFCON_BCEN);
+        SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_BCEN);
 }
 
 void ENC28J60::EnableMulticast()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) | ERXFCON_MCEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) | ERXFCON_MCEN);
 }
 
 void ENC28J60::DisableMulticast()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) & ~ERXFCON_MCEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_MCEN);
 }
 
 void ENC28J60::EnablePatternMatch(uint16_t nOffset, uint16_t nChecksum, uint64_t nMask)
 {
     //Write offset
-    WriteRegWord(EPMO, nOffset);
+    WriteRegWord(EPMO, nOffset & 0xFFFE); //erata B7 Carification 1 - offset must be even
     //Write mask
     WriteRegWord(EPMM0, nMask & 0xFF);
     WriteRegWord(EPMM2, (nMask >> 16) & 0xFF);
@@ -546,12 +565,12 @@ void ENC28J60::EnablePatternMatch(uint16_t nOffset, uint16_t nChecksum, uint64_t
     //Write checksum
     WriteRegWord(EPMCS, nChecksum);
     //Enable pattern matcihng
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) | ERXFCON_PMEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) | ERXFCON_PMEN);
 }
 
 void ENC28J60::DisablePatternMatch()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) & ~ERXFCON_PMEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_PMEN);
 }
 
 void ENC28J60::EnableHashFilter(uint64_t nHashFlags)
@@ -560,28 +579,28 @@ void ENC28J60::EnableHashFilter(uint64_t nHashFlags)
     WriteRegWord(EHT2, (nHashFlags >> 16) & 0xFFFF);
     WriteRegWord(EHT4, (nHashFlags >> 32) & 0xFFFF);
     WriteRegWord(EHT6, (nHashFlags >> 48) & 0xFFFF);
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) | ERXFCON_HTEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) | ERXFCON_HTEN);
 }
 
 void ENC28J60::DisableHashFilter()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) & ~ERXFCON_HTEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_HTEN);
 }
 
 void ENC28J60::EnableMagicPacket(byte* pAddress)
 {
-    WriteRegByte(MAADR0, pAddress[0]);
-    WriteRegByte(MAADR1, pAddress[1]);
-    WriteRegByte(MAADR2, pAddress[2]);
-    WriteRegByte(MAADR3, pAddress[3]);
-    WriteRegByte(MAADR4, pAddress[4]);
-    WriteRegByte(MAADR5, pAddress[5]);
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) | ERXFCON_MPEN);
+    SPIWriteReg(MAADR0, pAddress[0]);
+    SPIWriteReg(MAADR1, pAddress[1]);
+    SPIWriteReg(MAADR2, pAddress[2]);
+    SPIWriteReg(MAADR3, pAddress[3]);
+    SPIWriteReg(MAADR4, pAddress[4]);
+    SPIWriteReg(MAADR5, pAddress[5]);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) | ERXFCON_MPEN);
 }
 
 void ENC28J60::DisableMagicPacket()
 {
-    WriteRegByte(ERXFCON, ReadRegByte(ERXFCON) & ~ERXFCON_MPEN);
+    SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_MPEN);
 }
 
 bool ENC28J60::BIST(byte nTest)
@@ -606,14 +625,14 @@ bool ENC28J60::BIST(byte nTest)
     WriteRegWord(ECON1, ECON1_CSUMEN);
     //4. Write the seed/initial shift value byte to the EBSTSD register (this is not necessary if Address Fill mode is used)
     if(ENC28J60_BIST_AFM != nTest)
-        WriteRegByte(EBSTSD, 0b10101010 | millis()); //random data
+        SPIWriteReg(EBSTSD, 0b10101010 | millis()); //random data
     //5. Enable Test mode, select the desired test, select the desired port configuration for the test
     WriteRegWord(EDMAST, nTest);
     //6. Start the BIST by setting EBSTCON.BISTST
-    SPISetBit(EBSTCON, EBSTCON_BISTST);
+    SPISetBits(EBSTCON, EBSTCON_BISTST);
     //7. If Random Data Fill with Race mode is not used, start the DMA checksum by setting DMAST in ECON1. The DMA controller will read thememory at the same rate the BIST controller willwrite to it, so the DMA can be started any timeafter the BIST is started
     if(ENC28J60_BIST_RDFM_RACE != nTest)
-        SPISetBit(ECON1, ECON1_DMAST);
+        SPISetBits(ECON1, ECON1_DMAST);
     //8. Wait for the DMA to complete by polling the DMAST bit
     while(SPIReadRegister(ECON1) & ECON1_DMAST)
         ;
@@ -631,7 +650,7 @@ int16_t ENC28J60::RxBegin()
     m_nRxPacketPtr = m_rxHeader.nNextPacket;
     WriteRegWord(ERDPT, m_nRxPacketPtr); //Advance to next packet
 
-    if(0 == ReadRegByte(EPKTCNT))
+    if(0 == SPIReadRegister(EPKTCNT))
         return 0; //There are no packets to process
     SPIReadBuf((byte*)&m_rxHeader, sizeof(m_rxHeader)); //Get NIC packet header (ENC28J60 data - not packet data)
     m_rxHeader.nSize -= 4; //Reduce size to ignore CRC at end of recieve buffer which is checked by NIC
@@ -672,33 +691,37 @@ uint16_t ENC28J60::GetRxPacketSize()
 
 void ENC28J60::RxEnd()
 {
-    WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket); //Advance recieve buffer read point to free space used by last processed packet
-    SPISetBit(ECON2, ECON2_PKTDEC); //Decrement the packet count
+    //erata B7.14 - ensure points to odd address
+    if(ERXST == m_rxHeader.nNextPacket)
+        WriteRegWord(ERXRDPT, ERXND);
+    else
+        WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket - 1);
+    SPISetBits(ECON2, ECON2_PKTDEC); //Decrement the packet count
 }
 
 byte ENC28J60::TxGetStatus()
 {
     if(SPIReadRegister(ECON1) & ECON1_TXRTS)
         return ENC28J60_TX_IN_PROGRESS;
-    if(ReadRegByte(EIR) & EIR_TXERIF)
+    if(SPIReadRegister(EIR) & EIR_TXERIF)
         return ENC28J60_TX_FAILED;
     return ENC28J60_TX_SUCCESS;
 }
 
 void ENC28J60::TxClearError()
 {
-    SPIClearBit(ESTAT, ESTAT_LATECOL | ESTAT_TXABRT);
+    SPIClearBits(ESTAT, ESTAT_LATECOL | ESTAT_TXABRT);
 }
 
 void ENC28J60::TxBegin()
 {
-    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
+    while(SPIReadRegister(ECON1) & ECON1_TXRTS) //!@todo Consider erata B7.12 which says this may block indefinitely
         ; //Wait for previous transmission (if any) to complete
-    if(ReadRegByte(EIR) & EIR_TXERIF) //Tx aborted
+    if(SPIReadRegister(EIR) & EIR_TXERIF) //Tx aborted
     {
         //Reset Tx, i.e. abort transmission
-        SPISetBit(ECON1, ECON1_TXRST); //Transmit reset only
-        SPIClearBit(ECON1, ECON1_TXRST); //Return to normal operation
+        SPISetBits(ECON1, ECON1_TXRST); //Transmit reset only
+        SPIClearBits(ECON1, ECON1_TXRST); //Return to normal operation
     }
     WriteRegWord(EWRPT, TX_BUFFER_START); //Reset start of Tx buffer
     SPIWriteReg(ENC28J60_SPI_WBM, 0); //Reset control word to use default send configuration
@@ -715,8 +738,13 @@ void ENC28J60::TxAppend(byte* pData, uint16_t nLen)
 void ENC28J60::TxEnd()
 {
     WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen); //Set length of packet
-    SPISetBit(ECON1, ECON1_TXRTS); //Start transmission
+    SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
 }
 
-
+void ENC28J60::SetLedMode(uint16_t nMode)
+{
+    Serial.print("Setting LED mode ");
+    Serial.println(nMode);
+    WritePhyWord(PHLCON, nMode);
+}
 
