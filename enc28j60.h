@@ -1,6 +1,6 @@
 // Microchip ENC28J60 Ethernet Interface Driver
-// Author: Pascal Stang
-// Modified by: Guido Socher
+// Original Author: Pascal Stang
+// Modified by: Guido Socher, Brian Walton
 // Copyright: GPL V2
 //
 // This driver provides initialization and transmit/receive
@@ -8,7 +8,12 @@
 // This chip is novel in that it is a full MAC+PHY interface all in a 28-pin
 // chip, using an SPI interface to the host processor.
 //
+// Based on documentation from Microchip:
+//   39662e - Stand-Alone Ethernet Controller with SPI Interface
+//   80349c - ENC28J60 Silicon Errata and Data Sheet Clarification (B7)
+//
 // 2010-05-20 <jc@wippler.nl>
+// 2014-10-17 <brian@riban.co.uk>
 
 #pragma once
 
@@ -17,6 +22,7 @@
 static const byte ENC28J60_TX_SUCCESS       = 0x00;
 static const byte ENC28J60_TX_IN_PROGRESS   = 0x01;
 static const byte ENC28J60_TX_FAILED        = 0x02;
+static const int16_t ENC28J60_RX_ERROR      = -1; //!< Indicates error receiving packet
 //Built in self test modes
 static const byte ENC28J60_BIST_RDFM        = 0b0000; //!< Random data fill mode
 static const byte ENC28J60_BIST_RDFM_RACE   = 0b1100; //!< Random data fill mode with race
@@ -44,9 +50,12 @@ struct ENC28J60_RX_HEADER
     uint16_t nStatus;
 };
 
+class Address;
+
 /** This class provide low-level interfacing with the ENC28J60 network interface.*/
 class ENC28J60
 {
+    friend class IPV4;
     public:
         /**   @brief  Initialise network interface
         *     @param  macaddr Pointer to 4 byte hardware (MAC) address
@@ -80,8 +89,18 @@ class ENC28J60
         void PowerDown();  // contrib by Alex M.
 
         /** @brief  Wake ENC28J60 from sleep mode
+        *   @note   This also enables packet reception
         */
         void PowerUp();    // contrib by Alex M.
+
+        /** @brief  Enable reception of packets
+        */
+        void EnableReception();
+
+        /** @brief  Disable reception of packets
+        *   @return <i>bool</i> True if state changed
+        */
+        bool DisableReception();
 
         /** @brief  Enables unicast match filter
         *   @note   This is default behaviour. Accepts packets targetted at local host MAC address
@@ -164,10 +183,11 @@ class ENC28J60
 
         //Reception functions
         /** @brief  Start handling next received packet
-        *   @return <i>int16_t</i> Size of packet. Zero if new packet not available. -1 if error recieving packet
+        *   @return <i>int16_t</i> Size of packet. Zero if new packet not available. ENC28J60_RX_ERROR if error recieving packet
         *   @note   Call GetRxStatus to find error
         *   @note   Call RxEnd to finish processing recieved packet (and release recieve buffer space)
         *   @note   Calling RxBegin will end current packet processing
+        *   @note   ENC28J60 pads packet to minimum packet size of 60.
         */
         int16_t RxBegin();
 
@@ -202,6 +222,7 @@ class ENC28J60
         /** @brief  Get status of recieved packet
         *   @return <i>uint16_t</i> Status represented as 32 bit flags
         *   @note   Flags represented by constants prefixed with ENC28J60_RX_
+        *   @note   ENC28J60 pads packet to minimum packet size of 60.
         *   @todo   Link to flag documentation
         */
         uint16_t RxGetStatus();
@@ -227,6 +248,22 @@ class ENC28J60
         */
         void TxAppend(byte* pData, uint16_t nLen);
 
+        /** @brief  Write data to specific position in write buffer
+        *   @param  nOffset Position offset from start of Tx buffer, i.e. 0=first byte of buffer
+        *   @param  pData Pointer to data to be written
+        *   @param  nLen Quantity of bytes to write to buffer
+        *   @note   Leaves append buffer cursor and Tx packet size counter unchanged.
+        */
+        void TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen);
+
+        /** @brief  Read data from specific position in write buffer
+        *   @param  nOffset Postion offset from start of Tx buffer, i.e. 0=first byte of buffer
+        *   @param  pData Pointer to buffer to populate with read data
+        *   @param  nLen Quantity of bytes to read
+        *   @note   Leaves append buffer cursor and Tx packet size counter unchanged.
+        */
+        void TxRead(uint16_t nOffset, byte* pData, uint16_t nLen);
+
         /** @brief  Check if last transmission was successful
         *   @return <i>byte</i> Result: ENC28J60_TX_SUCCESS | ENC28J60_TX_IN_PROGRESS | ENC28J60_TX_FAILED
         */
@@ -241,7 +278,27 @@ class ENC28J60
         */
         void SetLedMode(uint16_t nMode);
 
-//    private:
+        /** @brief  Sets duplex
+        *   @param  bFull True to set full-duplex, false for half-duplex
+        */
+        void SetFullDuplex(bool bFullDuplex = true);
+
+        /** @brief  Enable flow control
+        *   @param  bEnable True to enable, false to disable
+        */
+        void EnableFlowControl(bool bEnable = true);
+
+        /** @brief  Populates transmission buffer with destination and source addresses from recieve buffer (reversed)
+        *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44 s to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
+        */
+        void DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination);
+
+        /** @brief  Get the recieve buffer status
+        *   @return <i>uint32_t</i> 32 bit flags representing last recieved packet status
+        */
+        uint32_t GetRxStatus();
+
+    protected:
         //SPI functions
         /** @brief  Initialise SPI interface
         *   @note   Configures Arduino pins as input / output, configures SPI interface, etc.
@@ -301,6 +358,7 @@ class ENC28J60
         void SPIClearBits(byte nRegister, byte nBits);
 
         /** @brief  Reset NIC
+        *   @note   Will power up NIC if in powersave mode
         */
         void SPIReset();
 
@@ -312,6 +370,7 @@ class ENC28J60
         */
         void DisableChip();
 
+        //Register manipulation
         /** @brief  Read 16-bit word from register
         *   @param  nAddress Register address
         *   @return <i>uint16_t</i> Register value
@@ -337,6 +396,8 @@ class ENC28J60
         void WritePhyWord(byte nAddress, uint16_t nData);
 
         bool m_bBroadcastEnabled; //!< True if broadcasts enabled (used to allow temporary disable of broadcast for DHCP or other internal functions)
+        bool m_bFlowControl; //!< True if flow control used to limit reception rate
+        bool m_bRxPause; //!< True if flow control pause asserted
         byte m_nSelectPin; //!< Arduino pin used as chip select
         byte m_nBank; //!< Currently selected register bank (stored in most significant 3 bits)
         uint16_t m_nTxLen; //!< Size of transmission packet

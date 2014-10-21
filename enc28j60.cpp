@@ -18,9 +18,9 @@
 #include "enc28j60.h"
 
 // ENC28J60 Control Registers (encoded with register address (bits 0-4), bank number (bits 5-6) and MAC/MII indicator (bit 7)
-static const byte REGISTER_MASK     = 0x1F; //bits 0-4
-static const byte BANK_MASK         = 0x60; //bits 5-6
-static const byte MACMII_MASK       = 0x80; //bit 7 - used by SPIReadRegister() because MAC and MII registers are read on second byte!!!???
+static const byte REGISTER_MASK     = 0x1F; //!< Mask for encoding register bits 0-4
+static const byte BANK_MASK         = 0x60; //!< Mask for encoding bank bits 5-6
+static const byte MACMII_MASK       = 0x80; //!< Mask for encoding MAC or MII registers bit 7 - used by SPIReadRegister() because MAC and MII registers are read on second byte!!!???
 static const byte BANK0_MASK        = 0x00; //!< Control register bank 0 mask
 static const byte BANK1_MASK        = 0x20; //!< Control register bank 1 mask
 static const byte BANK2_MASK        = 0x40; //!< Control register bank 2 mask
@@ -100,38 +100,28 @@ static const uint16_t ECOCON         = (0x15|BANK3_MASK); //!< Reset type (bits 
 static const uint16_t EFLOCON        = (0x17|BANK3_MASK); //!< Ethernet flow control register
 static const uint16_t EPAUS          = (0x18|BANK3_MASK); //!< Pause timer value
 
-// ENC28J60 ERXFCON Register Bit Definitions
-static const uint16_t ERXFCON_UCEN   = 0x80; //!< Unicast filter enable bit
-static const uint16_t ERXFCON_ANDOR  = 0x40; //!< AND / OR filter select bit
-static const uint16_t ERXFCON_CRCEN  = 0x20; //!< Post-Filter CRC check enable bit
-static const uint16_t ERXFCON_PMEN   = 0x10; //!< Pattern match enable bit
-static const uint16_t ERXFCON_MPEN   = 0x08; //!< Magic Packet filter enable bit
-static const uint16_t ERXFCON_HTEN   = 0x04; //!< Hash table filter enable bit
-static const uint16_t ERXFCON_MCEN   = 0x02; //!< Multicast match enable bit
-static const uint16_t ERXFCON_BCEN   = 0x01; //!< Broadcast match enable bit
 // ENC28J60 EIE Register Bit Definitions
-static const uint16_t EIE_INTIE      = 0x80;
-static const uint16_t EIE_PKTIE      = 0x40;
-static const uint16_t EIE_DMAIE      = 0x20;
-static const uint16_t EIE_LINKIE     = 0x10;
-static const uint16_t EIE_TXIE       = 0x08;
-static const uint16_t EIE_WOLIE      = 0x04;
-static const uint16_t EIE_TXERIE     = 0x02;
-static const uint16_t EIE_RXERIE     = 0x01;
+static const uint16_t EIE_INTIE      = 0x80; //!< Global INT interrupt enable bit
+static const uint16_t EIE_PKTIE      = 0x40; //!< Receive packet pending interrupt enable bit
+static const uint16_t EIE_DMAIE      = 0x20; //!< DMA interrupt enable bit
+static const uint16_t EIE_LINKIE     = 0x10; //!< Link status change interrupt enable bit
+static const uint16_t EIE_TXIE       = 0x08; //!< Transmit enable bit
+static const uint16_t EIE_TXERIE     = 0x02; //!< Transmit error interrupt enable bit
+static const uint16_t EIE_RXERIE     = 0x01; //!< Receive error interrupt enable bit
 // ENC28J60 EIR Register Bit Definitions
-static const uint16_t EIR_PKTIF      = 0x40;
-static const uint16_t EIR_DMAIF      = 0x20;
-static const uint16_t EIR_LINKIF     = 0x10;
-static const uint16_t EIR_TXIF       = 0x08;
-static const uint16_t EIR_WOLIF      = 0x04;
-static const uint16_t EIR_TXERIF     = 0x02;
-static const uint16_t EIR_RXERIF     = 0x01;
+static const uint16_t EIR_PKTIF      = 0x40; //!< Receive packet pending interrupt flag bit
+static const uint16_t EIR_DMAIF      = 0x20; //!< DMA interrupt flag bit
+static const uint16_t EIR_LINKIF     = 0x10; //!< Link change interrupt flag bit
+static const uint16_t EIR_TXIF       = 0x08; //!< Transmit interrupt flag bit
+static const uint16_t EIR_TXERIF     = 0x02; //!< Transmit error interrupt Flag bit
+static const uint16_t EIR_RXERIF     = 0x01; //!< Receive error interrupt flag bit
 // ENC28J60 ESTAT Register Bit Definitions
-static const uint16_t ESTAT_INT      = 0x80;
-static const uint16_t ESTAT_LATECOL  = 0x10;
-static const uint16_t ESTAT_RXBUSY   = 0x04;
-static const uint16_t ESTAT_TXABRT   = 0x02;
-static const uint16_t ESTAT_CLKRDY   = 0x01;
+static const uint16_t ESTAT_INT      = 0x80; //!< INT interrupt flag bit
+static const uint16_t ESTAT_BUFFER   = 0x40; //!< INT interrupt flag bit
+static const uint16_t ESTAT_LATECOL  = 0x10; //!< Ethernet buffer error status bit
+static const uint16_t ESTAT_RXBUSY   = 0x04; //!< Receive busy bit
+static const uint16_t ESTAT_TXABRT   = 0x02; //!< Transmit abort error bit
+static const uint16_t ESTAT_CLKRDY   = 0x01; //!< Clock ready bit (resets to ‘0’ on Power-on Reset but is unaffected on all other Resets)
 // ENC28J60 ECON2 Register Bit Definitions
 static const uint16_t ECON2_AUTOINC  = 0x80; //!< Automatic buffer pointer increment enable bit
 static const uint16_t ECON2_PKTDEC   = 0x40; //!< Packet Decrement bit
@@ -146,46 +136,58 @@ static const byte ECON1_TXRTS    = 0x08; //!< Transmit request to send bit
 static const byte ECON1_RXEN     = 0x04; //!< Recieve enable bit
 static const byte ECON1_BSEL1    = 0x02; //!< Bank select bit 1
 static const byte ECON1_BSEL0    = 0x01; //!< Bank select bit 0
+// ENC28J60 ERXFCON Register Bit Definitions
+static const uint16_t ERXFCON_UCEN   = 0x80; //!< Unicast filter enable bit
+static const uint16_t ERXFCON_ANDOR  = 0x40; //!< AND / OR filter select bit
+static const uint16_t ERXFCON_CRCEN  = 0x20; //!< Post-Filter CRC check enable bit
+static const uint16_t ERXFCON_PMEN   = 0x10; //!< Pattern match enable bit
+static const uint16_t ERXFCON_MPEN   = 0x08; //!< Magic Packet filter enable bit
+static const uint16_t ERXFCON_HTEN   = 0x04; //!< Hash table filter enable bit
+static const uint16_t ERXFCON_MCEN   = 0x02; //!< Multicast match enable bit
+static const uint16_t ERXFCON_BCEN   = 0x01; //!< Broadcast match enable bit
 // ENC28J60 MACON1 Register Bit Definitions
-static const uint16_t MACON1_LOOPBK  = 0x10;
-static const uint16_t MACON1_TXPAUS  = 0x08;
-static const uint16_t MACON1_RXPAUS  = 0x04;
-static const uint16_t MACON1_PASSALL = 0x02;
-static const uint16_t MACON1_MARXEN  = 0x01;
-// ENC28J60 MACON2 Register Bit Definitions
-static const uint16_t MACON2_MARST   = 0x80;
-static const uint16_t MACON2_RNDRST  = 0x40;
-static const uint16_t MACON2_MARXRST = 0x08;
-static const uint16_t MACON2_RFUNRST = 0x04;
-static const uint16_t MACON2_MATXRST = 0x02;
-static const uint16_t MACON2_TFUNRST = 0x01;
+static const uint16_t MACON1_TXPAUS  = 0x08; //!< Pause control frame transmission enable bit
+static const uint16_t MACON1_RXPAUS  = 0x04; //!< Pause control frame reception enable bit
+static const uint16_t MACON1_PASSALL = 0x02; //!< Pass all received frames enable bit
+static const uint16_t MACON1_MARXEN  = 0x01; //!< MAC receive enable bit
+// ENC28J60 MACON2 Register removed from release note B7 so ommited here
 // ENC28J60 MACON3 Register Bit Definitions
-static const uint16_t MACON3_PADCFG2 = 0x80;
-static const uint16_t MACON3_PADCFG1 = 0x40;
-static const uint16_t MACON3_PADCFG0 = 0x20;
-static const uint16_t MACON3_TXCRCEN = 0x10;
-static const uint16_t MACON3_PHDRLEN = 0x08;
-static const uint16_t MACON3_HFRMLEN = 0x04;
-static const uint16_t MACON3_FRMLNEN = 0x02;
-static const uint16_t MACON3_FULDPX  = 0x01;
+static const uint16_t MACON3_PADCFG2 = 0x80; //!< Automatic pad and CRC configuration bit 2
+static const uint16_t MACON3_PADCFG1 = 0x40; //!< Automatic pad and CRC configuration bit 1
+static const uint16_t MACON3_PADCFG0 = 0x20; //!< Automatic pad and CRC configuration bit 0
+static const uint16_t MACON3_TXCRCEN = 0x10; //!< Transmit CRC enable bit
+static const uint16_t MACON3_PHDRLEN = 0x08; //!< Proprietary header enable bit
+static const uint16_t MACON3_HFRMLEN = 0x04; //!< Huge frame enable bit
+static const uint16_t MACON3_FRMLNEN = 0x02; //!< Frame length checking enable bit
+static const uint16_t MACON3_FULDPX  = 0x01; //!< MAC Full-Duplex enable bit
+// ENC28J60 MACON4 Register Bit Definitions
+static const uint16_t MACON4_DEFER   = 0x40;   //!< Defer transmission enable bit (applies to half duplex only)
+static const uint16_t MACON4_BPEN    = 0x20;   //!< No backoff during backpressure enable bit (applies to half duplex only)
+static const uint16_t MACON4_NOBKOFF = 0x10;   //!< No backoff enable bit (applies to half duplex only)
 // ENC28J60 MICMD Register Bit Definitions
-static const uint16_t MICMD_MIISCAN  = 0x02;
-static const uint16_t MICMD_MIIRD    = 0x01;
-// ENC28J60 MISTAT Register Bit Definitions
-static const uint16_t MISTAT_NVALID  = 0x04;
-static const uint16_t MISTAT_SCAN    = 0x02;
-static const uint16_t MISTAT_BUSY    = 0x01;
-
+static const uint16_t MICMD_MIISCAN  = 0x02; //!< MII scan enable bit
+static const uint16_t MICMD_MIIRD    = 0x01; //!< MII read enable bit
 // ENC28J60 EBSTCON Register Bit Definitions
-static const uint16_t EBSTCON_PSV2   = 0x80;
-static const uint16_t EBSTCON_PSV1   = 0x40;
-static const uint16_t EBSTCON_PSV0   = 0x20;
-static const uint16_t EBSTCON_PSEL   = 0x10;
-static const uint16_t EBSTCON_TMSEL1 = 0x08;
-static const uint16_t EBSTCON_TMSEL0 = 0x04;
-static const uint16_t EBSTCON_TME    = 0x02;
-static const uint16_t EBSTCON_BISTST = 0x01;
-
+static const uint16_t EBSTCON_PSV2   = 0x80; //!< Pattern shift value bit 2
+static const uint16_t EBSTCON_PSV1   = 0x40; //!< Pattern shift value bit 1
+static const uint16_t EBSTCON_PSV0   = 0x20; //!< Pattern shift value bit 0
+static const uint16_t EBSTCON_PSEL   = 0x10; //!< Port select bit
+static const uint16_t EBSTCON_TMSEL1 = 0x08; //!< Test mode select bit 1
+static const uint16_t EBSTCON_TMSEL0 = 0x04; //!< Test mode select bit 0
+static const uint16_t EBSTCON_TME    = 0x02; //!< Test mode enable bit
+static const uint16_t EBSTCON_BISTST = 0x01; //!< Built-in self-test start/busy bit
+// ENC28J60 MISTAT Register Bit Definitions
+static const uint16_t MISTAT_NVALID     = 0x04; //!< MII management read data not valid bit
+static const uint16_t MISTAT_SCAN       = 0x02; //!< MII management scan operation bit
+static const uint16_t MISTAT_BUSY       = 0x01; //!< MII management busy bit
+// ENC28J60 ECOCON Register Bit Definitions
+static const uint16_t ECOCON_COCON2     = 0x04; //!< Clock output configuration bit 2
+static const uint16_t ECOCON_COCON1     = 0x02; //!< Clock output configuration bit 1
+static const uint16_t ECOCON_COCON0     = 0x01; //!< Clock output configuration bit 0
+// ENC28J60 EFLOCON Register Bit Definitions
+static const uint16_t EFLOCON_FULDPXS   = 0x04; //!< Read-only MAC full-duplex shadow bit
+static const uint16_t EFLOCON_FCEN1     = 0x02; //!< Flow control enable bit 1
+static const uint16_t EFLOCON_FCEN0     = 0x01; //!< Flow control enable bit 0
 // PHY registers
 static const byte PHCON1         = 0x00; //!< PHY control register
 static const byte PHSTAT1        = 0x01; //!< Physical layer status register 1
@@ -198,15 +200,15 @@ static const byte PHIR           = 0x13; //!< PHY interrupt request (flag) regis
 static const byte PHLCON         = 0x14; //!< PHY LED control register
 
 // ENC28J60 PHY PHCON1 Register Bit Definitions
-static const uint16_t PHCON1_PRST    = 0x8000;
-static const uint16_t PHCON1_PLOOPBK = 0x4000;
-static const uint16_t PHCON1_PPWRSV  = 0x0800;
-static const uint16_t PHCON1_PDPXMD  = 0x0100;
+static const uint16_t PHCON1_PRST    = 0x8000; //!< PHY software reset bit
+static const uint16_t PHCON1_PLOOPBK = 0x4000; //!< PHY loopback bit
+static const uint16_t PHCON1_PPWRSV  = 0x0800; //!< PHY power-down bit
+static const uint16_t PHCON1_PDPXMD  = 0x0100; //!< PHY duplex mode bit
 // ENC28J60 PHY PHSTAT1 Register Bit Definitions
-static const uint16_t PHSTAT1_PFDPX  = 0x1000;
-static const uint16_t PHSTAT1_PHDPX  = 0x0800;
-static const uint16_t PHSTAT1_LLSTAT = 0x0004;
-static const uint16_t PHSTAT1_JBSTAT = 0x0002;
+static const uint16_t PHSTAT1_PFDPX  = 0x1000; //!< PHY full-duplex capable bit
+static const uint16_t PHSTAT1_PHDPX  = 0x0800; //!< PHY half-duplex capable bit
+static const uint16_t PHSTAT1_LLSTAT = 0x0004; //!< PHY latching link status bit
+static const uint16_t PHSTAT1_JBSTAT = 0x0002; //!< PHY latching jabber status bit
 // ENC28J60 PHT PHSTAT2 Register Bit Definitions
 static const uint16_t PHSTAT2_TXSTAT    = 0x2000; //!< PHY transmit status bit
 static const uint16_t PHSTAT2_RXSTAT    = 0x1000; //!< PHY revieve status bit
@@ -215,16 +217,16 @@ static const uint16_t PHSTAT2_LSTAT     = 0x0400; //!< PHY link status status bi
 static const uint16_t PHSTAT2_DPXSTAT   = 0x0200; //!< PHY duplex status bit
 static const uint16_t PHSTAT2_PLRITY    = 0x0020; //!< PHY polarity status bit
 // ENC28J60 PHY PHCON2 Register Bit Definitions
-static const uint16_t PHCON2_FRCLINK = 0x4000;
-static const uint16_t PHCON2_TXDIS   = 0x2000;
-static const uint16_t PHCON2_JABBER  = 0x0400;
-static const uint16_t PHCON2_HDLDIS  = 0x0100;
+static const uint16_t PHCON2_FRCLINK = 0x4000; //!< PHY Force linkup bit
+static const uint16_t PHCON2_TXDIS   = 0x2000; //!< Twisted-pair transmitter disable bit
+static const uint16_t PHCON2_JABBER  = 0x0400; //!< Jabber correction disable bit
+static const uint16_t PHCON2_HDLDIS  = 0x0100; //!< PHY half-duplex loopback disable bit
 
 // ENC28J60 Packet Control Byte Bit Definitions
-static const byte PKTCTRL_PHUGEEN   = 0x08;
-static const byte PKTCTRL_PPADEN    = 0x04;
-static const byte PKTCTRL_PCRCEN    = 0x02;
-static const byte PKTCTRL_POVERRIDE = 0x01;
+static const byte PKTCTRL_PHUGEEN   = 0x08; //!< Per packet huge frame enable bit
+static const byte PKTCTRL_PPADEN    = 0x04; //!< Per packet padding enable bit
+static const byte PKTCTRL_PCRCEN    = 0x02; //!< Per packet CRC enable bit
+static const byte PKTCTRL_POVERRIDE = 0x01; //!< Per packet override bit
 
 // ENC28J60 SPI instruction set
 static const byte SPI_OPCODE_MASK   = 0xe0; //!< Bitwise mask of SPI opcode (3 most significant bits of first instruction byte)
@@ -243,10 +245,10 @@ static const uint16_t TX_BUFFER_START   = 0x1A0C; //!< Start of transmit buffer 
 static const uint16_t TX_BUFFER_END     = 0x1FFF; //!< End of transmit buffer which is end of available memory
 
 static const uint16_t MAX_FRAMELEN      = 1518; //!< Maximum frame length
+static const byte MAX_RX_PACKET         = 3; //!< Maximum quantity of packets to allow in receive buffer before asserting flow control pause
 
 void ENC28J60::SPIInit()
 {
-    Serial.println("Initialise SPI");
     pinMode(SS, OUTPUT);
     digitalWrite(SS, HIGH);
     pinMode(MOSI, OUTPUT);
@@ -279,10 +281,6 @@ void ENC28J60::SPISetBank(byte nAddress)
         m_nBank = nAddress & BANK_MASK; //Decode bank from address (bits 5-6)
         SPISetBits(ECON1, m_nBank >> 5); //Set bank (BSEL0/1 are bits 0/1)
         DisableChip();
-//        Serial.print("Select bank ");
-//        Serial.print("[");
-//        Serial.print(m_nBank >> 5);
-//        Serial.print("]");
     }
 }
 
@@ -295,10 +293,6 @@ byte ENC28J60::SPIReadRegister(byte nRegister)
     if(nRegister & MACMII_MASK)
         nResult = SPITransfer(); //If MAC or MII register, use second byte (after dummy first byte)
     DisableChip();
-//    Serial.print("Read value 0x");
-//    Serial.print(nResult, HEX);
-//    Serial.print(" from register 0x");
-//    Serial.println(nRegister & SPI_ARGUMENT_MASK, HEX);
     return nResult;
 }
 
@@ -318,10 +312,6 @@ void ENC28J60::SPIWriteReg(byte nRegister, byte nData)
     SPITransfer(ENC28J60_SPI_WCR | (nRegister & SPI_ARGUMENT_MASK));
     SPITransfer(nData);
     DisableChip();
-//    Serial.print("Write value 0x");
-//    Serial.print(nData, HEX);
-//    Serial.print(" to register 0x");
-//    Serial.println(nRegister & SPI_ARGUMENT_MASK, HEX);
 }
 
 void ENC28J60::SPIWriteBuf(byte* pData, uint16_t nLen)
@@ -358,6 +348,18 @@ void ENC28J60::SPIReset()
     SPITransfer(ENC28J60_SPI_SC);
     DisableChip();
     delay(1); //erata B7.2
+}
+
+void ENC28J60::EnableReception()
+{
+    SPISetBits(ECON1, ECON1_RXEN);
+}
+
+bool ENC28J60::DisableReception()
+{
+    bool bReturn = SPIReadRegister(ECON1) & ECON1_RXEN;
+    SPIClearBits(ECON1, ECON1_RXEN);
+    return bReturn;
 }
 
 void ENC28J60::EnableChip()
@@ -415,6 +417,8 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
 {
     m_nBank = 0xFF; //Set bank to invalid value to ensure initial bank selection
     m_bBroadcastEnabled = true;
+    m_bFlowControl = true;
+    m_bRxPause = false;
     if(bitRead(SPCR, SPE) == 0)
         SPIInit();
     m_nSelectPin = nChipSelectPin;
@@ -423,6 +427,7 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
 
     SPIReset();
 
+    DisableReception();
     m_rxHeader.nNextPacket = RX_BUFFER_START;
     m_rxHeader.nSize = 0;
     m_rxHeader.nStatus = 0;
@@ -437,7 +442,7 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
     SPIWriteReg(MACON2, 0x00);
     SPISetBits(MACON3, MACON3_PADCFG0|MACON3_TXCRCEN|MACON3_FRMLNEN);
-    WriteRegWord(MAIPG, 0x0C12);
+    WriteRegWord(MAIPG, 0x0c12);
     SPIWriteReg(MABBIPG, 0x12);
     WriteRegWord(MAMXFL, MAX_FRAMELEN);
     SPIWriteReg(MAADR5, pMac[0]);
@@ -448,8 +453,8 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     SPIWriteReg(MAADR0, pMac[5]);
     WritePhyWord(PHCON2, PHCON2_HDLDIS);
     SPISetBits(EIE, EIE_INTIE | EIE_PKTIE);
-    SPISetBits(ECON1, ECON1_RXEN);
-    EnableBroadcast(); //!@todo Docs say this is enabled by default - check if this is true
+    SetFullDuplex(true); //ENC28J60 defaults to half duplex - I want lib init default to be full duplex
+    EnableReception();
 
     byte nRevision = SPIReadRegister(EREVID);
     // microchip forgot to step the number on the silcon when they
@@ -495,7 +500,7 @@ uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
 void ENC28J60::PowerDown()
 {
     //1. Turn off packet reception by clearing ECON1.RXEN.
-    SPIClearBits(ECON1, ECON1_RXEN);
+    DisableReception();
     //2. Wait for any in-progress packets to finish being received by polling ESTAT.RXBUSY. This bit should be clear before proceeding.
     while(SPIReadRegister(ESTAT) & ESTAT_RXBUSY)
         ;
@@ -515,7 +520,7 @@ void ENC28J60::PowerUp()
     while(!SPIReadRegister(ESTAT) & ESTAT_CLKRDY)
         ;
     //3. Restore receive capability by setting ECON1.RXEN.
-    SPISetBits(ECON1, ECON1_RXEN);
+    EnableReception();
 }
 
 void ENC28J60::EnableUnicast()
@@ -650,12 +655,31 @@ int16_t ENC28J60::RxBegin()
     m_nRxPacketPtr = m_rxHeader.nNextPacket;
     WriteRegWord(ERDPT, m_nRxPacketPtr); //Advance to next packet
 
-    if(0 == SPIReadRegister(EPKTCNT))
+    byte nPktCnt = SPIReadRegister(EPKTCNT);
+    if(0 == nPktCnt)
         return 0; //There are no packets to process
+    if(m_bFlowControl)
+    {
+        //!@todo Use available memory rather than quantity of packets
+        if(nPktCnt >= MAX_RX_PACKET && !m_bRxPause)
+        {
+            //Too many packets and not yet asserted flow control pause so do it now
+            SPIWriteReg(EFLOCON, 0x02);
+            m_bRxPause = true;
+        }
+        else if(m_bRxPause && nPktCnt < MAX_RX_PACKET)
+        {
+            //Flow control asserted and fallen below packet threshold so unassert flow control pause
+            SPIWriteReg(EFLOCON, 0x03);
+            m_bRxPause = false;
+        }
+    }
+
     SPIReadBuf((byte*)&m_rxHeader, sizeof(m_rxHeader)); //Get NIC packet header (ENC28J60 data - not packet data)
     m_rxHeader.nSize -= 4; //Reduce size to ignore CRC at end of recieve buffer which is checked by NIC
     if(!(m_rxHeader.nStatus & ENC28J60_RX_OK)) //!@todo check whether all errors are detected by OK flag, e.g. length out of range
-        return -1; //Indicate error
+        return ENC28J60_RX_ERROR;
+
     return m_rxHeader.nSize;
 }
 
@@ -691,12 +715,15 @@ uint16_t ENC28J60::GetRxPacketSize()
 
 void ENC28J60::RxEnd()
 {
+    if(0 == m_rxHeader.nSize)
+        return; //Not currently processing packet
     //erata B7.14 - ensure points to odd address
     if(ERXST == m_rxHeader.nNextPacket)
         WriteRegWord(ERXRDPT, ERXND);
     else
         WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket - 1);
     SPISetBits(ECON2, ECON2_PKTDEC); //Decrement the packet count
+    m_rxHeader.nSize = 0; //Clear packet size - used to indicate we are processing a packet
 }
 
 byte ENC28J60::TxGetStatus()
@@ -735,6 +762,20 @@ void ENC28J60::TxAppend(byte* pData, uint16_t nLen)
     m_nTxLen += nLen;
 }
 
+void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
+{
+    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset);
+    SPIWriteBuf(pData, nLen);
+    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen);
+}
+
+void ENC28J60::TxRead(uint16_t nOffset, byte* pData, uint16_t nLen)
+{
+    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset);
+    SPIReadBuf(pData, nLen);
+    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen);
+}
+
 void ENC28J60::TxEnd()
 {
     WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen); //Set length of packet
@@ -743,8 +784,61 @@ void ENC28J60::TxEnd()
 
 void ENC28J60::SetLedMode(uint16_t nMode)
 {
-    Serial.print("Setting LED mode ");
-    Serial.println(nMode);
     WritePhyWord(PHLCON, nMode);
 }
 
+void ENC28J60::SetFullDuplex(bool bFullDuplex)
+{
+    //!@todo Test full / half duplex
+    bool bRx = DisableReception();
+    //Wait for Tx to complete
+    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
+        ;
+    uint16_t nMacon3 = SPIReadRegister(MACON3);
+    uint16_t nPhcon1 = SPIReadRegister(PHCON1);
+    if(bFullDuplex)
+    {
+        SPIWriteReg(MACON3, nMacon3 | MACON3_FULDPX);
+        SPIWriteReg(PHCON1, nPhcon1 | PHCON1_PDPXMD);
+    }
+    else
+    {
+        SPIWriteReg(MACON3, nMacon3 & ~MACON3_FULDPX);
+        SPIWriteReg(PHCON1, nPhcon1 & ~PHCON1_PDPXMD);
+    }
+    if(bRx)
+        EnableReception();
+}
+
+void ENC28J60::EnableFlowControl(bool bEnable)
+{
+    m_bFlowControl = bEnable;
+    if(bEnable)
+        SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
+    else
+        SPIWriteReg(MACON1, MACON1_MARXEN);
+}
+
+void ENC28J60::DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination)
+{
+    /*Appropriately program the EDMAST, EDMAND and EDMADST register pairs. The EDMAST registers should point to the first byte to copy from, the EDMAND registers should point to the
+    last byte to copy and the EDMADST registers should point to the first byte in the destination range. The destination range will always be linear, never wrapping at any values except from
+    8191 to 0 (the 8-Kbyte memory boundary). Extreme care should be taken when programming the Start and End Pointers to prevent a never ending DMA operation which would overwrite the entire 8-Kbyte buffer.
+    */
+    WriteRegWord(EDMAST, nStart);
+    WriteRegWord(EDMAND, (nStart == nEnd)?nEnd + 1:nEnd); //Ensure nStart and nEnd are different
+    WriteRegWord(EDMADST, TX_BUFFER_START + nDestination);
+    //Verify that ECON1.CSUMEN is clear.
+    while(SPIReadRegister(ECON1) & ECON1_CSUMEN)
+        ;
+    //Start the DMA copy by setting ECON1.DMAST.
+    SPISetBits(ECON1, ECON1_DMAST);
+    //When the copy is complete, the DMA hardware will clear the DMAST bit, set the DMAIF bit and generate an interrupt (if enabled). The pointers and the EDMACS registers will not be modified.
+    while(SPIReadRegister(ECON1) & ECON1_DMAST)
+        ;
+}
+
+uint32_t ENC28J60::GetRxStatus()
+{
+    return m_rxHeader.nStatus;
+}
