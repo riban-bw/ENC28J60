@@ -12,8 +12,9 @@ static const byte TEST_MENU         = ' ';
 static const byte TEST_LED          = '0';
 static const byte TEST_LINK         = '1';
 static const byte TEST_RX_PACKET    = '2';
-static const byte TEST_TX_PACKET    = '3';
-static const byte TEST_DUPLEX       = '4';
+static const byte TEST_TX_MIN_PACKET    = '3';
+static const byte TEST_TX_MAX_PACKET    = '4';
+static const byte TEST_DUPLEX       = '5';
 static const byte TEST_DUMP         = 'd';
 static const byte TEST_RESET        = 'r';
 static const byte TEST_POWER        = 'p';
@@ -95,8 +96,9 @@ void ShowMenu()
     Serial.println(F("0. Toggle LEDs"));
     Serial.println(F("1. Show link status"));
     Serial.println(F("2. Recieve packets"));
-    Serial.println(F("3. *Send packet"));
-    Serial.println(F("4. *Toggle duplex"));
+    Serial.println(F("3. *Send minimal packet"));
+    Serial.println(F("4. *Send maximum packet"));
+    Serial.println(F("5. *Toggle duplex"));
 //    Serial.println(F("d. *Dump registers"));
 //    Serial.println(F("r. *Reset NIC"));
     Serial.println(F("p. *Toggle power"));
@@ -182,29 +184,93 @@ void loop()
                 if(!nic.DisableReception())
                     nic.EnableReception();
                 break;
-            case TEST_TX_PACKET:
+            case TEST_TX_MIN_PACKET:
             {
                 //Send a minimal UDP packet to global broadcast address port 2000
-                byte pBuffer[22] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+                //Start Ethernet header
+                byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
                 nic.TxBegin();
                 nic.TxAppend(pBuffer, 6);
                 nic.TxAppend(pMac, 6);
                 memset(pBuffer, 0, sizeof pBuffer);
                 pBuffer[0] = 0x08; //Ether type IP
-                pBuffer[2] = 0x45; //IPV4
-                pBuffer[5] = 20 + 8; //IP length = header (20) + payload (8) 0x1C
-                pBuffer[10] = 64; //TTL 0x40
-                pBuffer[11] = 17; //Protocol = UDP 0x11
-                pBuffer[12] = 0x72; //Checksum
-                pBuffer[13] = 0xD2;
-                memset(pBuffer + 18, 0xFF, 4); //Set IP global broadcast address
-                nic.TxAppend(pBuffer, 22);
+                pBuffer[1] = 0x00;
+                nic.TxAppend(pBuffer, 2);
+                //Start IPV4 header
+                pBuffer[0] = 0x45; //IPV4
+//                pBuffer[3] = 20 + 8; //IP length = header (20) + payload (8) 0x1C
+                pBuffer[8] = 64; //TTL 0x40
+                pBuffer[9] = 17; //Protocol = UDP 0x11
+                pBuffer[10] = 0x00; //Checksum should be 0xD272 for this minimal packet
+                pBuffer[11] = 0x00;
+                //Leave source address = 0.0.0.0
+                memset(pBuffer + 16, 0xFF, 4); //Set IP global broadcast address
+                nic.TxAppend(pBuffer, 20);
+                //Start UDP header
                 memset(pBuffer, 0, sizeof(pBuffer));
                 pBuffer[2] = 0x20; //Destination port 8192
                 pBuffer[5] = 8; //UDP length
                 nic.TxAppend(pBuffer, 8);
+                uint16_t nLen = ENC28J60::Htons(28);
+                nic.TxWrite(14+2, (byte*)&nLen, 2);
+                uint16_t nChecksum = nic.GetChecksum(14, 20);
+                nic.TxWrite(14+10, (byte*)&nChecksum, 2);
                 nic.TxEnd(); //Send packet
                 Serial.println(" - minimal UDP packet sent");
+                break;
+            }
+            case TEST_TX_MAX_PACKET:
+            {
+                //Send a maximum size UDP packet to global broadcast address port 2000
+                //Start Ethernet header
+                byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+                nic.TxBegin();
+                nic.TxAppend(pBuffer, 6);
+                nic.TxAppend(pMac, 6);
+                memset(pBuffer, 0, sizeof pBuffer);
+                pBuffer[0] = 0x08; //Ether type IP
+                pBuffer[1] = 0x00;
+                nic.TxAppend(pBuffer, 2);
+                //Start IPV4 header
+                pBuffer[0] = 0x45; //IPV4
+                pBuffer[3] = 20 + 8; //IP length = header (20) + payload (8) 0x1C
+                pBuffer[8] = 64; //TTL 0x40
+                pBuffer[9] = 17; //Protocol = UDP 0x11
+                pBuffer[10] = 0x00; //Checksum
+                pBuffer[11] = 0x00;
+                memset(pBuffer + 16, 0xFF, 4); //Set IP global broadcast address
+                nic.TxAppend(pBuffer, 20);
+                //Start UDP header
+                memset(pBuffer, 0, sizeof(pBuffer));
+                pBuffer[2] = 0x20; //Destination port 8192
+                pBuffer[5] = 8; //UDP minimal length (change later)
+                nic.TxAppend(pBuffer, 8);
+                //Populate UDP payload
+                uint16_t nPayload = 8;
+                byte cData = 'a';
+//                while(!nic.TxAppend(&cData, 1))
+//                    nPayload++;
+                for(; nPayload < 209; nPayload++) //!@todo this goes wrong when header + payload length = 209
+                    nic.TxAppend(&cData, 1);
+                //Calculate UDP length
+                uint16_t nLen = ENC28J60::Htons(nPayload);
+                nic.TxWrite(14+20+4, (byte*)&nLen, 2);
+                //Calculate UDP checksum - IPV4 UDP checksum is optional. If provided it uses a pseudo header which makes using the ENJ28J60 checksum generator difficult to use.
+                //Setting UDP checksum to optional zero.
+//                uint16_t nChecksum = nic.GetChecksum(14+20, nPayload);
+//                nic.TxWrite(14+20+6, (byte*)&nChecksum, 2);
+                //Calculate IP length
+                nPayload += 20;
+                nLen = ENC28J60::Htons(nPayload);
+                Serial.println(nLen);
+                nic.TxWrite(14+2, (byte*)&nLen, 2);
+                //Calculate IP checksum
+                uint16_t nChecksum = nic.GetChecksum(14, 20);
+                Serial.println(nChecksum, HEX);
+                nic.TxWrite(14+10, (byte*)&nChecksum, 2);
+                nic.TxEnd(); //Send packet
+
+                Serial.println(" - maximum UDP packet sent");
                 break;
             }
 //            case TEST_DUMP:

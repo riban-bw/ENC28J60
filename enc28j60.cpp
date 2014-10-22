@@ -376,7 +376,7 @@ void ENC28J60::DisableChip()
 
 uint16_t ENC28J60::ReadRegWord(byte nAddress)
 {
-    return SPIReadRegister(nAddress) + (SPIReadRegister(nAddress+1) << 8);
+    return SPIReadRegister(nAddress) + (SPIReadRegister(nAddress + 1) << 8);
 }
 
 void ENC28J60::WriteRegWord(byte nAddress, uint16_t nData)
@@ -470,22 +470,13 @@ bool ENC28J60::IsLinkUp()
     return(ReadPhyWord(PHSTAT2) & PHSTAT2_LSTAT);
 }
 
-void ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
+bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
 {
-    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
-        ; //Wait for transmission to complete
-    if(SPIReadRegister(EIR) & EIR_TXERIF) //Tx aborted
-    {
-        //Reset Tx, i.e. abort transmission
-        SPISetBits(ECON1, ECON1_TXRST);
-        SPIClearBits(ECON1, ECON1_TXRST);
-    }
-    WriteRegWord(EWRPT, TX_BUFFER_START); //Reset to start of Tx buffer
-    WriteRegWord(ETXND, TX_BUFFER_START + nLen); //Set length of packet
-    //Write to Tx buffer
-    SPIWriteReg(ENC28J60_SPI_WBM, 0); //Reset control word to use default send configuration
-    SPIWriteBuf(pBuffer, nLen); //Write data to Tx buffer
-    SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
+    TxBegin();
+    if(TxAppend(pBuffer, nLen))
+        return true;
+    TxEnd();
+    return false;
 }
 
 uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
@@ -755,30 +746,33 @@ void ENC28J60::TxBegin()
     m_nTxLen = 0;
 }
 
-void ENC28J60::TxAppend(byte* pData, uint16_t nLen)
+bool ENC28J60::TxAppend(byte* pData, uint16_t nLen)
 {
+    if(m_nTxLen + nLen > MAX_FRAMELEN)
+        return true; //Insufficient space in Tx buffer
     //Write to Tx buffer
     SPIWriteBuf(pData, nLen); //Write data to Tx buffer
     m_nTxLen += nLen;
+    return false;
 }
 
 void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
 {
-    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset);
+    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset + 1); //packet data starts at offset +1, after 'per packet control byte'
     SPIWriteBuf(pData, nLen);
-    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen);
+    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen + 1); //Reset pointer to where it was
 }
 
 void ENC28J60::TxRead(uint16_t nOffset, byte* pData, uint16_t nLen)
 {
-    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset);
+    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset + 1); //packet data starts at offset +1, after 'per packet control byte'
     SPIReadBuf(pData, nLen);
-    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen);
+    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen + 1); //Reset pointer to where it was
 }
 
 void ENC28J60::TxEnd()
 {
-    WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen); //Set length of packet
+    WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen); //Define packet length by setting end of packet
     SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
 }
 
@@ -841,4 +835,36 @@ void ENC28J60::DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination)
 uint32_t ENC28J60::GetRxStatus()
 {
     return m_rxHeader.nStatus;
+}
+
+uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
+{
+    //Range check
+    if(nStart > TX_BUFFER_END)
+        return 0;
+    if(nStart + nLength > TX_BUFFER_END)
+        return 0;
+    //Set EDMAST to first byte and EDMAND to last byte
+    WriteRegWord(EDMAST, TX_BUFFER_START + nStart + 1); //Packet starts at offset +1, after 'per packet offset'
+    WriteRegWord(EDMAND, TX_BUFFER_START + nStart + nLength);
+    //To generate interrupt on completion, clear EIR.DMAIF, set EIE.DMAIE and set EIE.INTIE.
+    /* Uncomment to enable interrupt
+    SPIClearBits(EIR, EIR_DMAIF);
+    SPISetBits(EIE, EIE_DMAIE);
+    SPISetBits(EIE, EIE_INTIE);
+    */
+    //Start calculation by setting ECON1.CSUMEN and ECON1.DMAST.
+    SPISetBits(ECON1, ECON1_CSUMEN);
+    SPISetBits(ECON1, ECON1_DMAST);
+    //Check for completion: DMAST bit cleared, DMAIF bit set and an interrupt generated if enabled.
+    while((SPIReadRegister(ECON1) & ECON1_DMAST) && !(SPIReadRegister(EIR) | EIR_DMAIF))
+        delay(1);
+    //EDMACSH and EDMACSL registers will contain the calculated checksum.
+    uint16_t nResult = ReadRegWord(EDMACS);
+    return Htons(nResult);
+}
+
+uint16_t ENC28J60::Htons(uint16_t nValue)
+{
+    return (((nValue & 0x00FF) << 8) + ((nValue & 0xFF00) >> 8)); //htons
 }

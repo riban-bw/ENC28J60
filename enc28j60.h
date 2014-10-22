@@ -72,9 +72,11 @@ class ENC28J60
         /** @brief  Sends whole packet of data
         *   @param  pBuffer Pointer to the data buffer
         *   @param  nLen Quantity of bytes of data to send
-        *   @note   Only supports transmitting one packet at a time. Blocks until previous packet transmission is complete
+        *   @return <i>bool</i> False on success. Will fail if too much data for single packet.
+        *   @note   Only supports transmitting one packet at a time. Blocks until previous packet transmission is complete.
+        *   @note   Return value does not guarantee successful transmission, only that the data was transfered to Tx buffer and Tx requested to start.
         */
-        void PacketSend(byte* pBuffer, uint16_t nLen);
+        bool PacketSend(byte* pBuffer, uint16_t nLen);
 
         /** @brief  Copy recieved packet to data buffer
         *   @param  pBuffer Pointer to a buffer to recieve data
@@ -243,10 +245,11 @@ class ENC28J60
         /** @brief  Appends data to a transmission transaction
         *   @param  pData Pointer to data to append
         *   @param  nLen Quantity of bytes to append
+        *   @return <i>bool</i> False on success. True if insufficient space left in Tx buffer
         *   @note   Call TxBegin before appending data
         *   @note   Call TxEnd to complete transaction and send packet
         */
-        void TxAppend(byte* pData, uint16_t nLen);
+        bool TxAppend(byte* pData, uint16_t nLen);
 
         /** @brief  Write data to specific position in write buffer
         *   @param  nOffset Position offset from start of Tx buffer, i.e. 0=first byte of buffer
@@ -297,6 +300,15 @@ class ENC28J60
         *   @return <i>uint32_t</i> 32 bit flags representing last recieved packet status
         */
         uint32_t GetRxStatus();
+
+        /** @brief  Calculate a checksum of a range of the Tx buffer
+        *   @param  nStart Position of first byte of Tx buffer to checksum
+        *   @param  nLength Quantity of bytes to checksum
+        *   @return <i>uint16_t</i> Resulting checksum value
+        */
+        uint16_t GetChecksum(uint16_t nStart, uint16_t nLength);
+
+        static uint16_t Htons(uint16_t nValue);
 
     protected:
         //SPI functions
@@ -405,5 +417,4 @@ class ENC28J60
         uint16_t m_nRxOffset; //!< Pointer to postion within recieved packet used for random access
         uint16_t m_nRxSize; //!< Quantity of bytes in recieve buffer
         ENC28J60_RX_HEADER m_rxHeader; //!< Details of current recieve packet
-
 };
