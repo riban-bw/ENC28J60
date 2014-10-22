@@ -240,11 +240,13 @@ static const byte ENC28J60_SPI_BFC  = 0xA0; //!< Bit field clear
 static const byte ENC28J60_SPI_SC   = 0xFF; //!< System command (soft reset)
 
 //Used to configure NIC 8K RAM
-static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
-static const uint16_t TX_BUFFER_START   = 0x1A0C; //!< Start of transmit buffer which gives space for 1 packet
+static const uint16_t TX_BUFFER_PPCB    = 0x1A0E; //!< Address of 'per packet control byte', immediately before start of tx Buffer
+static const uint16_t TX_BUFFER_START   = 0x1A0F; //!< Start of transmit buffer which gives space for 1 packet (1514 frame bytes, 7 Tx status bytes)
 static const uint16_t TX_BUFFER_END     = 0x1FFF; //!< End of transmit buffer which is end of available memory
+static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
+static const uint16_t RX_BUFFER_END     = TX_BUFFER_PPCB - 1; //!< End of recieve circular buffer
 
-static const uint16_t MAX_FRAMELEN      = 1518; //!< Maximum frame length
+static const uint16_t MAX_FRAMELEN      = 1514; //!< Maximum frame length minus 4 byte crc appended by hardware
 static const byte MAX_RX_PACKET         = 3; //!< Maximum quantity of packets to allow in receive buffer before asserting flow control pause
 
 void ENC28J60::SPIInit()
@@ -434,14 +436,14 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     m_nRxPacketPtr = RX_BUFFER_START;
     WriteRegWord(ERXST, RX_BUFFER_START);
     WriteRegWord(ERXRDPT, RX_BUFFER_START);
-    WriteRegWord(ERXND, TX_BUFFER_START - 1);
-    WriteRegWord(ETXST, TX_BUFFER_START);
+    WriteRegWord(ERXND, RX_BUFFER_END);
+    WriteRegWord(ETXST, TX_BUFFER_PPCB);
     WriteRegWord(ETXND, TX_BUFFER_END);
     WriteRegWord(EPMM0, 0x303f);
     WriteRegWord(EPMCS, 0xf7f9);
     SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
     SPIWriteReg(MACON2, 0x00);
-    SPISetBits(MACON3, MACON3_PADCFG0|MACON3_TXCRCEN|MACON3_FRMLNEN);
+    SPIWriteReg(MACON3, MACON3_PADCFG0|MACON3_TXCRCEN|MACON3_FRMLNEN);
     WriteRegWord(MAIPG, 0x0c12);
     SPIWriteReg(MABBIPG, 0x12);
     WriteRegWord(MAMXFL, MAX_FRAMELEN);
@@ -678,8 +680,8 @@ uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset)
 {
     if(nOffset >= m_rxHeader.nSize)
         return 0; //Requested start beyond end of packet
-    if(TX_BUFFER_START - m_nRxPacketPtr <= nOffset) //Offset wraps receive circular buffer
-        WriteRegWord(ERDPT, RX_BUFFER_START + nOffset - (TX_BUFFER_START - m_nRxPacketPtr));
+    if(RX_BUFFER_END - m_nRxPacketPtr < nOffset) //Offset wraps receive circular buffer
+        WriteRegWord(ERDPT, RX_BUFFER_START + nOffset - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
     else
         WriteRegWord(ERDPT, m_nRxPacketPtr + nOffset);
     m_nRxOffset = nOffset;
@@ -741,7 +743,7 @@ void ENC28J60::TxBegin()
         SPISetBits(ECON1, ECON1_TXRST); //Transmit reset only
         SPIClearBits(ECON1, ECON1_TXRST); //Return to normal operation
     }
-    WriteRegWord(EWRPT, TX_BUFFER_START); //Reset start of Tx buffer
+    WriteRegWord(EWRPT, TX_BUFFER_PPCB); //Reset start of Tx buffer
     SPIWriteReg(ENC28J60_SPI_WBM, 0); //Reset control word to use default send configuration
     m_nTxLen = 0;
 }
@@ -758,21 +760,21 @@ bool ENC28J60::TxAppend(byte* pData, uint16_t nLen)
 
 void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
 {
-    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset + 1); //packet data starts at offset +1, after 'per packet control byte'
+    WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
     SPIWriteBuf(pData, nLen);
-    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen + 1); //Reset pointer to where it was
+    WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
 }
 
 void ENC28J60::TxRead(uint16_t nOffset, byte* pData, uint16_t nLen)
 {
-    SPIWriteReg(EWRPT, TX_BUFFER_START + nOffset + 1); //packet data starts at offset +1, after 'per packet control byte'
+    WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
     SPIReadBuf(pData, nLen);
-    SPIWriteReg(EWRPT, TX_BUFFER_START + m_nTxLen + 1); //Reset pointer to where it was
+    WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
 }
 
 void ENC28J60::TxEnd()
 {
-    WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen); //Define packet length by setting end of packet
+    WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen - 1); //Define packet length by setting ETXND to point to last byte of frame
     SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
 }
 
@@ -819,8 +821,17 @@ void ENC28J60::DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination)
     last byte to copy and the EDMADST registers should point to the first byte in the destination range. The destination range will always be linear, never wrapping at any values except from
     8191 to 0 (the 8-Kbyte memory boundary). Extreme care should be taken when programming the Start and End Pointers to prevent a never ending DMA operation which would overwrite the entire 8-Kbyte buffer.
     */
-    WriteRegWord(EDMAST, nStart);
-    WriteRegWord(EDMAND, (nStart == nEnd)?nEnd + 1:nEnd); //Ensure nStart and nEnd are different
+    if(nStart >= m_rxHeader.nSize || nEnd >= m_rxHeader.nSize || nStart >= nEnd)
+        return;
+    if(RX_BUFFER_END - m_nRxPacketPtr < nStart) //wraps receive circular buffer
+        WriteRegWord(EDMAST, RX_BUFFER_START + nStart - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
+    else
+        WriteRegWord(EDMAST, m_nRxPacketPtr + nStart);
+    if(RX_BUFFER_END - m_nRxPacketPtr < nEnd) //wraps receive circular buffer
+        WriteRegWord(EDMAST, RX_BUFFER_START + nEnd - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
+    else
+        WriteRegWord(EDMAST, m_nRxPacketPtr + nEnd);
+
     WriteRegWord(EDMADST, TX_BUFFER_START + nDestination);
     //Verify that ECON1.CSUMEN is clear.
     while(SPIReadRegister(ECON1) & ECON1_CSUMEN)
@@ -845,8 +856,8 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
     if(nStart + nLength > TX_BUFFER_END)
         return 0;
     //Set EDMAST to first byte and EDMAND to last byte
-    WriteRegWord(EDMAST, TX_BUFFER_START + nStart + 1); //Packet starts at offset +1, after 'per packet offset'
-    WriteRegWord(EDMAND, TX_BUFFER_START + nStart + nLength);
+    WriteRegWord(EDMAST, TX_BUFFER_START + nStart); //Packet starts at offset +1, after 'per packet offset'
+    WriteRegWord(EDMAND, TX_BUFFER_START + nStart + nLength - 1);
     //To generate interrupt on completion, clear EIR.DMAIF, set EIE.DMAIE and set EIE.INTIE.
     /* Uncomment to enable interrupt
     SPIClearBits(EIR, EIR_DMAIF);
@@ -861,10 +872,10 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
         delay(1);
     //EDMACSH and EDMACSL registers will contain the calculated checksum.
     uint16_t nResult = ReadRegWord(EDMACS);
-    return Htons(nResult);
+    return SwapBytes(nResult); //!@todo Should we return network byte order or host byte order? Should be consistent with other functions.
 }
 
-uint16_t ENC28J60::Htons(uint16_t nValue)
+uint16_t ENC28J60::SwapBytes(uint16_t nValue)
 {
-    return (((nValue & 0x00FF) << 8) + ((nValue & 0xFF00) >> 8)); //htons
+    return (((nValue & 0x00FF) << 8) + ((nValue & 0xFF00) >> 8));
 }

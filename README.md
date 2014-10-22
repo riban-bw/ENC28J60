@@ -35,8 +35,8 @@ Access to recieve and transmit buffers is provided by a transaction style interf
 
 To send a packet:
 
-* Call TxBegin() which waits for any outstanding transmision to complete then resets the transmission buffer and registers, ready for the next transmission.
-* Call TxAppend() to append data to the transmission buffer. Each call will append data to the buffer, allowing packet data to be defined by a single call or multiple calls, effectively building up the packet. The latter allows for abstraction or segmented programming, e.g. provide Ethernet header, provide IP header, provide IP payload, etc.
+* Call TxBegin() which waits for any outstanding transmision to complete then resets the transmission registers and buffer, ready for the next transmission.
+* Call TxAppend() to append data to the transmission buffer. Check result is false which means there is sufficient space for data in Tx buffer. Each call will append data to the buffer, allowing packet data to be defined by a single call or multiple calls, effectively building up the packet. The latter allows for abstraction or segmented programming, e.g. provide Ethernet header, provide IP header, provide IP payload, etc.
 * Call TxEnd() which starts the transmission of the packet.
 
 There is a helper function, PacketSend() which performs each transmission transaction step for a single packet buffer, i.e. if the calling application has constructed the whole packet in a byte buffer, it may call PacketSend.
@@ -47,5 +47,5 @@ To recieve a packet:
 * Call RxGetData to receive chunks of data. This may be called several times, allowing abstraction or semented programming, e.g. get Ethernet header, get IP header, get IP payload, etc. Two forms of the function call are availble, providing consecutive data access and random data access, i.e. the calling application may request consecutive data chunks or specify the start position for the data it requires.
 * Call RxEnd() to complete the recieve transaction, freeing the space used by this received packet back to the circular receive buffer.
 
-Note: Transactional access to the recieve buffers should be peformed as rapidly and regularly as possible to reduce the risk of packet loss. If there is insufficient space in the circular recieve buffer, packets will be dropped (ignored and permanently lost). The application may check for dropped packets by calling RxGetStatus().
+Note: Transactional access to the recieve buffers should be peformed as rapidly and regularly as possible to reduce the risk of packet loss. If there is insufficient space in the circular recieve buffer, packets will be dropped (ignored and permanently lost). The application may check for dropped packets by calling RxGetStatus(). If full duplex is enabled (default) then a connected network switch may buffer packets which may reduce packet loss. The ENC29J60 will buffer several packets but sustained network traffic above the rate it is being processed will result in packet loss.
 

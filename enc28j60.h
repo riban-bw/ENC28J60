@@ -15,6 +15,21 @@
 // 2010-05-20 <jc@wippler.nl>
 // 2014-10-17 <brian@riban.co.uk>
 
+/** @note   ENC28J60 memory allocation is made thus:
+*               0x0000 .. 0x1A0C Packet recieve circular buffer (RX_BUFFER_START .. TX_BUFFER_START - 1)
+*               0x1A0C .. 0x1FFF Transmission buffer (TX_BUFFER_START .. TX_BUFFER_END)
+*                   ETXST = 0x1A0E = Per packet control byte (should be an even address)
+*                           0x1A0F = First byte of packet data
+*                   ETXND points to last byte of packet        (Max = 0x1FF8)
+*                   EXTND + 1 = Transmit Status Vector [7:0]   (0x1FF9)
+*                   EXTND + 2 = Transmit Status Vector [15:8]  (0x1FFA)
+*                   EXTND + 3 = Transmit Status Vector [23:16] (0x1FFB)
+*                   EXTND + 4 = Transmit Status Vector [31:24] (0x1FFC)
+*                   EXTND + 5 = Transmit Status Vector [39:32] (0x1FFD)
+*                   EXTND + 6 = Transmit Status Vector [47:40] (0x1FFE)
+*                   EXTND + 7 = Transmit Status Vector [55:48] (0x1FFF)
+*/
+
 #pragma once
 
 // Tx status
@@ -45,9 +60,9 @@ static const uint16_t ENC28J60_RX_VLAN              = 0x4000; //!< Current frame
 
 struct ENC28J60_RX_HEADER
 {
-    uint16_t nNextPacket;
-    uint16_t nSize;
-    uint16_t nStatus;
+    uint16_t nNextPacket;   //!< Pointer to the position of first byte in next recieved packet
+    uint16_t nSize;         //!< Quantity of bytes in this packet
+    uint16_t nStatus;       //!< Error status of last packet reception - see ENC28J60_RX_ range of constant values, e.g. ENC28J60_RX_OK
 };
 
 class Address;
@@ -75,6 +90,7 @@ class ENC28J60
         *   @return <i>bool</i> False on success. Will fail if too much data for single packet.
         *   @note   Only supports transmitting one packet at a time. Blocks until previous packet transmission is complete.
         *   @note   Return value does not guarantee successful transmission, only that the data was transfered to Tx buffer and Tx requested to start.
+        *   @todo   Should we return true on success? Should be consistent with other functions.
         */
         bool PacketSend(byte* pBuffer, uint16_t nLen);
 
@@ -174,8 +190,6 @@ class ENC28J60
         */
         void DisableMagicPacket();
 
-        //!@todo Add filters for hash table, unicast?, Magic Packet
-
         /** @brief  Perform built in self test
         *   @param  nTest Bitwise flag specifying which tests to perform: ENC29J60_BIST_RDFM | ENC29J60_BIST_ENC29J60_BIST_RDFM_RACE | ENC29J60_BIST_AFM | ENC29J60_BIST_PSFM
         *   @return <i>bool</i> True on success
@@ -248,6 +262,7 @@ class ENC28J60
         *   @return <i>bool</i> False on success. True if insufficient space left in Tx buffer
         *   @note   Call TxBegin before appending data
         *   @note   Call TxEnd to complete transaction and send packet
+        *   @todo   Should we return true on success? Should be consistent with other functions.
         */
         bool TxAppend(byte* pData, uint16_t nLen);
 
@@ -256,6 +271,7 @@ class ENC28J60
         *   @param  pData Pointer to data to be written
         *   @param  nLen Quantity of bytes to write to buffer
         *   @note   Leaves append buffer cursor and Tx packet size counter unchanged.
+        *   @note   Offset is relative to start of packet frame data, not the 'per packet control byte' used by the ENC28J60
         */
         void TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen);
 
@@ -264,6 +280,7 @@ class ENC28J60
         *   @param  pData Pointer to buffer to populate with read data
         *   @param  nLen Quantity of bytes to read
         *   @note   Leaves append buffer cursor and Tx packet size counter unchanged.
+        *   @note   Offset is relative to start of packet frame data, not the 'per packet control byte' used by the ENC28J60
         */
         void TxRead(uint16_t nOffset, byte* pData, uint16_t nLen);
 
@@ -291,8 +308,11 @@ class ENC28J60
         */
         void EnableFlowControl(bool bEnable = true);
 
-        /** @brief  Populates transmission buffer with destination and source addresses from recieve buffer (reversed)
-        *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44 s to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
+        /** @brief  Performs driect memory access transfer of data from Rx buffer to Tx buffer
+        *   @param  nStart Offset in Rx buffer of first byte to copy
+        *   @param  nEnd Offset in Rx buffer of last byte to copy
+        *   @param  nDestination Offset in Tx buffer of first byte to copy to
+        *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44us to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
         */
         void DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination);
 
@@ -308,7 +328,15 @@ class ENC28J60
         */
         uint16_t GetChecksum(uint16_t nStart, uint16_t nLength);
 
-        static uint16_t Htons(uint16_t nValue);
+        /** @brief  Swaps the MSB and LSB of a 16-bit integer
+        *   @param  nValue 16-bit integer value
+        *   @return <i>uint16_t</i> Modified integer
+        *   @note   Converts 16-bit integer between host byte order and network byte order (either direction)
+        *   @note   Same as htons or ntohs
+        */
+        static uint16_t SwapBytes(uint16_t nValue);
+
+        //!@todo Add function to get TxStatus
 
     protected:
         //SPI functions

@@ -209,9 +209,9 @@ void loop()
                 //Start UDP header
                 memset(pBuffer, 0, sizeof(pBuffer));
                 pBuffer[2] = 0x20; //Destination port 8192
-                pBuffer[5] = 8; //UDP length
+                pBuffer[5] = 8; //UDP length (default without any payload)
                 nic.TxAppend(pBuffer, 8);
-                uint16_t nLen = ENC28J60::Htons(28);
+                uint16_t nLen = ENC28J60::SwapBytes(28); //Network byte order packet length
                 nic.TxWrite(14+2, (byte*)&nLen, 2);
                 uint16_t nChecksum = nic.GetChecksum(14, 20);
                 nic.TxWrite(14+10, (byte*)&nChecksum, 2);
@@ -223,47 +223,49 @@ void loop()
             {
                 //Send a maximum size UDP packet to global broadcast address port 2000
                 //Start Ethernet header
-                byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+                byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}; //Buffer for header. Start by using first 6 bytes for source and destination MAC
                 nic.TxBegin();
-                nic.TxAppend(pBuffer, 6);
-                nic.TxAppend(pMac, 6);
-                memset(pBuffer, 0, sizeof pBuffer);
+                nic.TxAppend(pBuffer, 6); //Populate destination MAC
+                nic.TxAppend(pMac, 6); //Populate source MAC
+                memset(pBuffer, 0, sizeof pBuffer); //Clear buffer for rest of header
                 pBuffer[0] = 0x08; //Ether type IP
                 pBuffer[1] = 0x00;
-                nic.TxAppend(pBuffer, 2);
+                nic.TxAppend(pBuffer, 2); //Populate Ether Type
                 //Start IPV4 header
                 pBuffer[0] = 0x45; //IPV4
-                pBuffer[3] = 20 + 8; //IP length = header (20) + payload (8) 0x1C
+                pBuffer[3] = 20 + 8; //IP length = header (20) + payload (8) = 28 (0x1C)
                 pBuffer[8] = 64; //TTL 0x40
-                pBuffer[9] = 17; //Protocol = UDP 0x11
-                pBuffer[10] = 0x00; //Checksum
+                pBuffer[9] = 17; //Protocol = UDP (0x11)
+                pBuffer[10] = 0x00; //Checksum - clear to allow correct generation by hardware
                 pBuffer[11] = 0x00;
                 memset(pBuffer + 16, 0xFF, 4); //Set IP global broadcast address
-                nic.TxAppend(pBuffer, 20);
+                nic.TxAppend(pBuffer, 20); //Populate IP header
                 //Start UDP header
-                memset(pBuffer, 0, sizeof(pBuffer));
+                memset(pBuffer, 0, sizeof(pBuffer)); //Clear buffer ready for UDP header
                 pBuffer[2] = 0x20; //Destination port 8192
                 pBuffer[5] = 8; //UDP minimal length (change later)
-                nic.TxAppend(pBuffer, 8);
+                nic.TxAppend(pBuffer, 8); //Populate UDP header
                 //Populate UDP payload
-                uint16_t nPayload = 8;
+                uint16_t nPktLen = 8; //Length of each header + payload. Start with empty UDP packet = 8
+                //Populate UDP payload with maximum quantity of dummy data
                 byte cData = 'a';
 //                while(!nic.TxAppend(&cData, 1))
-//                    nPayload++;
-                for(; nPayload < 209; nPayload++) //!@todo this goes wrong when header + payload length = 209
+//                    nPktLen++;
+
+                //To test fault - populate UDP payload with specific quantity of dummy data
+                for(; nPktLen < 1476; nPktLen++) //!@todo this goes wrong when header + payload length > 208 (0xD0) - should be fixed by changes to TxWrite (20141022)
                     nic.TxAppend(&cData, 1);
                 //Calculate UDP length
-                uint16_t nLen = ENC28J60::Htons(nPayload);
-                nic.TxWrite(14+20+4, (byte*)&nLen, 2);
+                uint16_t nLen = ENC28J60::SwapBytes(nPktLen); //
+                nic.TxWrite(14+20+4, (byte*)&nLen, 2); //!@todo This does not seem to happen / work if payload > 208 - should be fixed by changes to TxWrite (20141022)
                 //Calculate UDP checksum - IPV4 UDP checksum is optional. If provided it uses a pseudo header which makes using the ENJ28J60 checksum generator difficult to use.
                 //Setting UDP checksum to optional zero.
-//                uint16_t nChecksum = nic.GetChecksum(14+20, nPayload);
+//                uint16_t nChecksum = nic.GetChecksum(14+20, nPktLen);
 //                nic.TxWrite(14+20+6, (byte*)&nChecksum, 2);
                 //Calculate IP length
-                nPayload += 20;
-                nLen = ENC28J60::Htons(nPayload);
-                Serial.println(nLen);
-                nic.TxWrite(14+2, (byte*)&nLen, 2);
+                nPktLen += 20;
+                nLen = ENC28J60::SwapBytes(nPktLen);
+                nic.TxWrite(14+2, (byte*)&nLen, 2); //!@todo This does not seem to happen / work if payload > 208 - should be fixed by changes to TxWrite (20141022)
                 //Calculate IP checksum
                 uint16_t nChecksum = nic.GetChecksum(14, 20);
                 Serial.println(nChecksum, HEX);
@@ -366,6 +368,7 @@ void loop()
         }
         case TEST_RX_PACKET:
         {
+            //!@todo check for long packets
             int16_t nRx = nic.RxBegin(); //Start a recieve transaction and get size of next pending packet
             if(0 == nRx)
                 return; // No packet available
