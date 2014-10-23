@@ -239,14 +239,14 @@ static const byte ENC28J60_SPI_BFS  = 0x80; //!< Bit field set
 static const byte ENC28J60_SPI_BFC  = 0xA0; //!< Bit field clear
 static const byte ENC28J60_SPI_SC   = 0xFF; //!< System command (soft reset)
 
-//Used to configure NIC 8K RAM
-static const uint16_t TX_BUFFER_PPCB    = 0x1A0E; //!< Address of 'per packet control byte', immediately before start of tx Buffer
-static const uint16_t TX_BUFFER_START   = 0x1A0F; //!< Start of transmit buffer which gives space for 1 packet (1514 frame bytes, 7 Tx status bytes)
+// NIC 8K RAM allocation
+static const uint16_t MAX_FRAMELEN      = 1514; //!< Maximum frame length minus 4 byte crc appended by hardware
 static const uint16_t TX_BUFFER_END     = 0x1FFF; //!< End of transmit buffer which is end of available memory
+static const uint16_t TX_BUFFER_PPCB    = TX_BUFFER_END - MAX_FRAMELEN - 7; //!< Address of 'per packet control byte', immediately before start of tx Buffer
+static const uint16_t TX_BUFFER_START   = TX_BUFFER_PPCB + 1; //!< Start of transmit buffer which gives space for 1 packet (1514 frame bytes, 7 Tx status bytes)
 static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
 static const uint16_t RX_BUFFER_END     = TX_BUFFER_PPCB - 1; //!< End of recieve circular buffer
 
-static const uint16_t MAX_FRAMELEN      = 1514; //!< Maximum frame length minus 4 byte crc appended by hardware
 static const byte MAX_RX_PACKET         = 3; //!< Maximum quantity of packets to allow in receive buffer before asserting flow control pause
 
 void ENC28J60::SPIInit()

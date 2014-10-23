@@ -15,6 +15,7 @@ static const byte TEST_RX_PACKET    = '2';
 static const byte TEST_TX_MIN_PACKET    = '3';
 static const byte TEST_TX_MAX_PACKET    = '4';
 static const byte TEST_DUPLEX       = '5';
+static const byte TEST_BIST         = '6';
 static const byte TEST_DUMP         = 'd';
 static const byte TEST_RESET        = 'r';
 static const byte TEST_POWER        = 'p';
@@ -99,6 +100,7 @@ void ShowMenu()
     Serial.println(F("3. *Send minimal packet"));
     Serial.println(F("4. *Send maximum packet"));
     Serial.println(F("5. *Toggle duplex"));
+    Serial.println(F("6. *Built-in self tests"));
 //    Serial.println(F("d. *Dump registers"));
 //    Serial.println(F("r. *Reset NIC"));
     Serial.println(F("p. *Toggle power"));
@@ -248,16 +250,15 @@ void loop()
                 //Populate UDP payload
                 uint16_t nPktLen = 8; //Length of each header + payload. Start with empty UDP packet = 8
                 //Populate UDP payload with maximum quantity of dummy data
-                byte cData = 'a';
-//                while(!nic.TxAppend(&cData, 1))
-//                    nPktLen++;
-
-                //To test fault - populate UDP payload with specific quantity of dummy data
-                for(; nPktLen < 1476; nPktLen++) //!@todo this goes wrong when header + payload length > 208 (0xD0) - should be fixed by changes to TxWrite (20141022)
-                    nic.TxAppend(&cData, 1);
+                byte cData = 0;
+                while(!nic.TxAppend(&cData, 1))
+                {
+                    nPktLen++;
+                    ++cData;
+                }
                 //Calculate UDP length
                 uint16_t nLen = ENC28J60::SwapBytes(nPktLen); //
-                nic.TxWrite(14+20+4, (byte*)&nLen, 2); //!@todo This does not seem to happen / work if payload > 208 - should be fixed by changes to TxWrite (20141022)
+                nic.TxWrite(14+20+4, (byte*)&nLen, 2);
                 //Calculate UDP checksum - IPV4 UDP checksum is optional. If provided it uses a pseudo header which makes using the ENJ28J60 checksum generator difficult to use.
                 //Setting UDP checksum to optional zero.
 //                uint16_t nChecksum = nic.GetChecksum(14+20, nPktLen);
@@ -265,7 +266,7 @@ void loop()
                 //Calculate IP length
                 nPktLen += 20;
                 nLen = ENC28J60::SwapBytes(nPktLen);
-                nic.TxWrite(14+2, (byte*)&nLen, 2); //!@todo This does not seem to happen / work if payload > 208 - should be fixed by changes to TxWrite (20141022)
+                nic.TxWrite(14+2, (byte*)&nLen, 2);
                 //Calculate IP checksum
                 uint16_t nChecksum = nic.GetChecksum(14, 20);
                 Serial.println(nChecksum, HEX);
@@ -347,6 +348,10 @@ void loop()
                 nic.EnableFlowControl(bFlow);
                 Serial.print(" - Flow control ");
                 Serial.println(bFlow?"enabled":"disabled");
+                break;
+            case TEST_BIST:
+                Serial.print("BIST ");
+                Serial.println(nic.BIST()?"Pass":"Fail");
                 break;
         }
     }
