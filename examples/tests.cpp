@@ -187,49 +187,15 @@ void loop()
                     nic.EnableReception();
                 break;
             case TEST_TX_MIN_PACKET:
-            {
-                //Send a minimal UDP packet to global broadcast address port 2000
-                //Start Ethernet header
-                byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
-                nic.TxBegin();
-                nic.TxAppend(pBuffer, 6);
-                nic.TxAppend(pMac, 6);
-                memset(pBuffer, 0, sizeof pBuffer);
-                pBuffer[0] = 0x08; //Ether type IP
-                pBuffer[1] = 0x00;
-                nic.TxAppend(pBuffer, 2);
-                //Start IPV4 header
-                pBuffer[0] = 0x45; //IPV4
-//                pBuffer[3] = 20 + 8; //IP length = header (20) + payload (8) 0x1C
-                pBuffer[8] = 64; //TTL 0x40
-                pBuffer[9] = 17; //Protocol = UDP 0x11
-                pBuffer[10] = 0x00; //Checksum should be 0xD272 for this minimal packet
-                pBuffer[11] = 0x00;
-                //Leave source address = 0.0.0.0
-                memset(pBuffer + 16, 0xFF, 4); //Set IP global broadcast address
-                nic.TxAppend(pBuffer, 20);
-                //Start UDP header
-                memset(pBuffer, 0, sizeof(pBuffer));
-                pBuffer[2] = 0x20; //Destination port 8192
-                pBuffer[5] = 8; //UDP length (default without any payload)
-                nic.TxAppend(pBuffer, 8);
-                uint16_t nLen = ENC28J60::SwapBytes(28); //Network byte order packet length
-                nic.TxWrite(14+2, (byte*)&nLen, 2);
-                uint16_t nChecksum = nic.GetChecksum(14, 20);
-                nic.TxWrite(14+10, (byte*)&nChecksum, 2);
-                nic.TxEnd(); //Send packet
-                Serial.println(" - minimal UDP packet sent");
-                break;
-            }
             case TEST_TX_MAX_PACKET:
             {
-                //Send a maximum size UDP packet to global broadcast address port 2000
+                //Send a UDP packet to global broadcast address port 2000
                 //Start Ethernet header
                 byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}; //Buffer for header. Start by using first 6 bytes for source and destination MAC
                 nic.TxBegin();
                 nic.TxAppend(pBuffer, 6); //Populate destination MAC
                 nic.TxAppend(pMac, 6); //Populate source MAC
-                memset(pBuffer, 0, sizeof pBuffer); //Clear buffer for rest of header
+                memset(pBuffer, 0, sizeof(pBuffer)); //Clear buffer for rest of header
                 pBuffer[0] = 0x08; //Ether type IP
                 pBuffer[1] = 0x00;
                 nic.TxAppend(pBuffer, 2); //Populate Ether Type
@@ -248,28 +214,22 @@ void loop()
                 pBuffer[5] = 8; //UDP minimal length (change later)
                 nic.TxAppend(pBuffer, 8); //Populate UDP header
                 //Populate UDP payload
-                uint16_t nPktLen = 8; //Length of each header + payload. Start with empty UDP packet = 8
                 //Populate UDP payload with maximum quantity of dummy data
                 byte cData = 0;
-                while(!nic.TxAppend(&cData, 1))
+                if(TEST_TX_MAX_PACKET == nInput)
                 {
-                    nPktLen++;
-                    ++cData;
+                    for(int i = 0; i < 1470; ++i) //!@todo fails for udp payload > 1468
+                        nic.TxAppend(&cData, 1);
+//                    while(!nic.TxAppend(&cData, 1))
+//                        ++cData;
                 }
                 //Calculate UDP length
-                uint16_t nLen = ENC28J60::SwapBytes(nPktLen); //
-                nic.TxWrite(14+20+4, (byte*)&nLen, 2);
-                //Calculate UDP checksum - IPV4 UDP checksum is optional. If provided it uses a pseudo header which makes using the ENJ28J60 checksum generator difficult to use.
-                //Setting UDP checksum to optional zero.
-//                uint16_t nChecksum = nic.GetChecksum(14+20, nPktLen);
-//                nic.TxWrite(14+20+6, (byte*)&nChecksum, 2);
-                //Calculate IP length
-                nPktLen += 20;
-                nLen = ENC28J60::SwapBytes(nPktLen);
-                nic.TxWrite(14+2, (byte*)&nLen, 2);
+                uint16_t nLen = ENC28J60::SwapBytes(nic.TxGetSize() - 34);
+                nic.TxWrite(14+20+4, (byte*)&nLen, 2); //UDP size
+                nLen = ENC28J60::SwapBytes(nic.TxGetSize() - 14);
+                nic.TxWrite(14+2, (byte*)&nLen, 2); //IP size
                 //Calculate IP checksum
                 uint16_t nChecksum = nic.GetChecksum(14, 20);
-                Serial.println(nChecksum, HEX);
                 nic.TxWrite(14+10, (byte*)&nChecksum, 2);
                 nic.TxEnd(); //Send packet
 
@@ -298,7 +258,10 @@ void loop()
                 break;
             case TEST_DUPLEX:
                 bDuplex = !bDuplex;
-                nic.SetFullDuplex(bDuplex);
+                if(bDuplex)
+                    nic.SetFullDuplex();
+                else
+                    nic.SetHalfDuplex();
                 Serial.println(bDuplex?" - Full duplex":" - Half duplex");
                 break;
             case TEST_UNICAST:
@@ -345,7 +308,10 @@ void loop()
                 break;
             case TEST_FLOW:
                 bFlow = !bFlow;
-                nic.EnableFlowControl(bFlow);
+                if(bFlow)
+                    nic.EnableFlowControl();
+                else
+                    nic.DisableFlowControl();
                 Serial.print(" - Flow control ");
                 Serial.println(bFlow?"enabled":"disabled");
                 break;
@@ -384,7 +350,7 @@ void loop()
             else if(-1 == nRx)
             {
                 Serial.print("Recieve error ");
-                Serial.println(nic.GetRxStatus());
+                Serial.println(nic.RxGetStatus());
             }
             else
             {
@@ -400,7 +366,7 @@ void loop()
                     if(i < 11)
                         Serial.print(":");
                 }
-                if((int16_t)nic.GetRxPacketSize() != nRx)
+                if((int16_t)nic.RxGetPacketSize() != nRx)
                     Serial.print(" !!Packet size error: ");
                 else
                     Serial.print(" size=");
