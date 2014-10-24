@@ -58,6 +58,7 @@ static const uint16_t ENC28J60_RX_PAUSE_FRAME       = 0x1000; //!< Current frame
 static const uint16_t ENC28J60_RX_UNKNOWN_OPCODE    = 0x2000; //!< Current frame was recognized as a control frame but it contained an unknown opcode
 static const uint16_t ENC28J60_RX_VLAN              = 0x4000; //!< Current frame was recognized as a VLAN tagged frame
 
+/** @brief  Describes details of last recieved packet */
 struct ENC28J60_RX_HEADER
 {
     uint16_t nNextPacket;   //!< Pointer to the position of first byte in next recieved packet
@@ -65,12 +66,9 @@ struct ENC28J60_RX_HEADER
     uint16_t nStatus;       //!< Error status of last packet reception - see ENC28J60_RX_ range of constant values, e.g. ENC28J60_RX_OK
 };
 
-class Address;
-
-/** This class provide low-level interfacing with the ENC28J60 network interface.*/
+/** @brief  This class provide low-level interfacing with the ENC28J60 network interface.*/
 class ENC28J60
 {
-    friend class IPV4;
     public:
         /**   @brief  Initialise network interface
         *     @param  macaddr Pointer to 4 byte hardware (MAC) address
@@ -79,37 +77,14 @@ class ENC28J60
         */
         byte Initialize(const byte* pMac, byte nChipSelectPin = 10);
 
-        /**   @brief  Check if network link is connected
-        *     @return <i>bool</i> True if link is up
-        */
-        bool IsLinkUp();
-
-        /** @brief  Sends whole packet of data
-        *   @param  pBuffer Pointer to the data buffer
-        *   @param  nLen Quantity of bytes of data to send
-        *   @return <i>bool</i> False on success. Will fail if too much data for single packet.
-        *   @note   Only supports transmitting one packet at a time. Blocks until previous packet transmission is complete.
-        *   @note   Return value does not guarantee successful transmission, only that the data was transfered to Tx buffer and Tx requested to start.
-        *   @todo   Should we return true on success? Should be consistent with other functions.
-        */
-        bool PacketSend(byte* pBuffer, uint16_t nLen);
-
-        /** @brief  Copy recieved packet to data buffer
-        *   @param  pBuffer Pointer to a buffer to recieve data
-        *   @param  nSize Maximum quantity of bytes to read
-        *   @return <i>uint16_t</i> Quantity of bytes actually copied
-        *   @note   Use this function to handle whole packets (with suitable sized buffer). Use Rx transaction functions to access NIC recieve buffer directly
-        */
-        uint16_t PacketReceive(byte* pBuffer, uint16_t nSize);
-
-        /** @brief  Put ENC28J60 in sleep mode
-        */
-        void PowerDown();  // contrib by Alex M.
-
         /** @brief  Wake ENC28J60 from sleep mode
         *   @note   This also enables packet reception
         */
         void PowerUp();    // contrib by Alex M.
+
+        /** @brief  Put ENC28J60 in sleep mode
+        */
+        void PowerDown();  // contrib by Alex M.
 
         /** @brief  Enable reception of packets
         */
@@ -190,12 +165,31 @@ class ENC28J60
         */
         void DisableMagicPacket();
 
-        /** @brief  Perform built in self test
-        *   @param  nTest Bitwise flag specifying which tests to perform: ENC29J60_BIST_RDFM | ENC29J60_BIST_ENC29J60_BIST_RDFM_RACE | ENC29J60_BIST_AFM | ENC29J60_BIST_PSFM
-        *   @return <i>bool</i> True on success
-        *   @note   Default is perform all tests
+        /** @brief  Sets duplex to full
         */
-        bool BIST(byte nTest = ENC28J60_BIST_RDFM | ENC28J60_BIST_RDFM_RACE | ENC28J60_BIST_AFM | ENC28J60_BIST_PSFM);
+        void SetFullDuplex();
+
+        /** @brief  Sets duplex to false
+        */
+        void SetHalfDuplex();
+
+        /** @brief  Enable flow control
+        */
+        void EnableFlowControl();
+
+        /** @brief  Disable flow control
+        */
+        void DisableFlowControl();
+
+        /**   @brief  Check if network link is connected
+        *     @return <i>bool</i> True if link is up
+        */
+        bool IsLinkUp();
+
+        /** @brief  Sets LED mode
+        *   @param  nMode LED mode
+        */
+        void SetLedMode(uint16_t nMode);
 
         //Reception functions
         /** @brief  Start handling next received packet
@@ -206,11 +200,6 @@ class ENC28J60
         *   @note   ENC28J60 pads packet to minimum packet size of 60.
         */
         int16_t RxBegin();
-
-        /** @brief  Finishes handling recieved packet
-        *   @note   This call frees the space within the recieve buffer used by the packet
-        */
-        void RxEnd();
 
         /** @brief  Gets data from recieve buffer
         *   @param  pBuffer Pointer to a buffer to hold data
@@ -233,7 +222,7 @@ class ENC28J60
         *   @return <i>uint16_t</i> Quantity of bytes in recieved packet
         *   @note   ERDPT read pointer set to start of Ethernet packet (destination address)
         */
-        uint16_t GetRxPacketSize();
+        uint16_t RxGetPacketSize();
 
         /** @brief  Get status of recieved packet
         *   @return <i>uint16_t</i> Status represented as 32 bit flags
@@ -243,18 +232,25 @@ class ENC28J60
         */
         uint16_t RxGetStatus();
 
+        /** @brief  Finishes handling recieved packet
+        *   @note   This call frees the space within the recieve buffer used by the packet
+        */
+        void RxEnd();
+
+        /** @brief  Copy recieved packet to data buffer
+        *   @param  pBuffer Pointer to a buffer to recieve data
+        *   @param  nSize Maximum quantity of bytes to read
+        *   @return <i>uint16_t</i> Quantity of bytes actually copied
+        *   @note   Use this function to handle whole packets (with suitable sized buffer). Use Rx transaction functions to access NIC recieve buffer directly
+        */
+        uint16_t PacketReceive(byte* pBuffer, uint16_t nSize);
+
         //Transmission functions
         /** @brief  Starts a transmission transaction
         *   @note   Call TxAppend to append data to the transmission transaction
         *   @note   Call TxEnd to close transaction and send packet
         */
         void TxBegin();
-
-        /** @brief  Ends a transmission transaction and sends packet
-        *   @note   Call TxBegin to start transaction
-        *   @note   Call TxAppend to append data to the transmission transaction
-        */
-        void TxEnd();
 
         /** @brief  Appends data to a transmission transaction
         *   @param  pData Pointer to data to append
@@ -289,25 +285,35 @@ class ENC28J60
         */
         byte TxGetStatus();
 
+        //!@todo Add function to get individual TxStatus
+
         /** @brief  Clears all transmit error flags
         */
         void TxClearError();
 
-        /** @brief  Sets LED mode
-        *   @param  nMode LED mode
+        /** @brief  Get the size of the Tx packet / frame
+        *   @return <i>uint16_t</i>
         */
-        void SetLedMode(uint16_t nMode);
+        uint16_t TxGetSize();
 
-        /** @brief  Sets duplex
-        *   @param  bFull True to set full-duplex, false for half-duplex
+        /** @brief  Ends a transmission transaction and sends packet
+        *   @note   Call TxBegin to start transaction
+        *   @note   Call TxAppend to append data to the transmission transaction
         */
-        void SetFullDuplex(bool bFullDuplex = true);
+        void TxEnd();
 
-        /** @brief  Enable flow control
-        *   @param  bEnable True to enable, false to disable
+        /** @brief  Sends whole packet of data
+        *   @param  pBuffer Pointer to the data buffer
+        *   @param  nLen Quantity of bytes of data to send
+        *   @return <i>bool</i> False on success. Will fail if too much data for single packet.
+        *   @note   Only supports transmitting one packet at a time. Blocks until previous packet transmission is complete.
+        *   @note   Return value does not guarantee successful transmission, only that the data was transfered to Tx buffer and Tx requested to start.
+        *   @todo   Should we return true on success? Should be consistent with other functions.
         */
-        void EnableFlowControl(bool bEnable = true);
+        bool PacketSend(byte* pBuffer, uint16_t nLen);
 
+
+        //Misc functions
         /** @brief  Performs driect memory access transfer of data from Rx buffer to Tx buffer
         *   @param  nStart Offset in Rx buffer of first byte to copy
         *   @param  nEnd Offset in Rx buffer of last byte to copy
@@ -315,18 +321,6 @@ class ENC28J60
         *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44us to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
         */
         void DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination);
-
-        /** @brief  Get the recieve buffer status
-        *   @return <i>uint32_t</i> 32 bit flags representing last recieved packet status
-        */
-        uint32_t GetRxStatus();
-
-        /** @brief  Calculate a checksum of a range of the Tx buffer
-        *   @param  nStart Position of first byte of Tx buffer to checksum
-        *   @param  nLength Quantity of bytes to checksum
-        *   @return <i>uint16_t</i> Resulting checksum value
-        */
-        uint16_t GetChecksum(uint16_t nStart, uint16_t nLength);
 
         /** @brief  Swaps the MSB and LSB of a 16-bit integer
         *   @param  nValue 16-bit integer value
@@ -336,7 +330,24 @@ class ENC28J60
         */
         static uint16_t SwapBytes(uint16_t nValue);
 
-        //!@todo Add function to get TxStatus
+        /** @brief  Get the MAC address from the NIC
+        *   @param  pMac Pointer to 6 byte array
+        */
+        void GetMac(byte* pMac);
+
+        /** @brief  Calculate a checksum of a range of the Tx buffer
+        *   @param  nStart Position of first byte of Tx buffer to checksum
+        *   @param  nLength Quantity of bytes to checksum
+        *   @return <i>uint16_t</i> Resulting checksum value
+        */
+        uint16_t GetChecksum(uint16_t nStart, uint16_t nLength);
+
+        /** @brief  Perform built in self test
+        *   @param  nTest Bitwise flag specifying which tests to perform: ENC29J60_BIST_RDFM | ENC29J60_BIST_ENC29J60_BIST_RDFM_RACE | ENC29J60_BIST_AFM | ENC29J60_BIST_PSFM
+        *   @return <i>bool</i> True on success
+        *   @note   Default is perform all tests
+        */
+        bool BIST(byte nTest = ENC28J60_BIST_RDFM | ENC28J60_BIST_RDFM_RACE | ENC28J60_BIST_AFM | ENC28J60_BIST_PSFM);
 
     protected:
         //SPI functions
@@ -402,14 +413,6 @@ class ENC28J60
         */
         void SPIReset();
 
-        /** @brief  Enable interface chip
-        */
-        void EnableChip();
-
-        /** @brief  Disable interface chip
-        */
-        void DisableChip();
-
         //Register manipulation
         /** @brief  Read 16-bit word from register
         *   @param  nAddress Register address
@@ -434,6 +437,15 @@ class ENC28J60
         *   @param  nData Register value
         */
         void WritePhyWord(byte nAddress, uint16_t nData);
+
+        /** @brief  Enable interface chip
+        */
+        void EnableChip();
+
+        /** @brief  Disable interface chip
+        */
+        void DisableChip();
+
 
         bool m_bBroadcastEnabled; //!< True if broadcasts enabled (used to allow temporary disable of broadcast for DHCP or other internal functions)
         bool m_bFlowControl; //!< True if flow control used to limit reception rate

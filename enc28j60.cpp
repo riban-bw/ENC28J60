@@ -249,6 +249,8 @@ static const uint16_t RX_BUFFER_END     = TX_BUFFER_PPCB - 1; //!< End of reciev
 
 static const byte MAX_RX_PACKET         = 3; //!< Maximum quantity of packets to allow in receive buffer before asserting flow control pause
 
+//***SPI bus interface functions***
+
 void ENC28J60::SPIInit()
 {
     pinMode(SS, OUTPUT);
@@ -352,29 +354,7 @@ void ENC28J60::SPIReset()
     delay(1); //erata B7.2
 }
 
-void ENC28J60::EnableReception()
-{
-    SPISetBits(ECON1, ECON1_RXEN);
-}
-
-bool ENC28J60::DisableReception()
-{
-    bool bReturn = SPIReadRegister(ECON1) & ECON1_RXEN;
-    SPIClearBits(ECON1, ECON1_RXEN);
-    return bReturn;
-}
-
-void ENC28J60::EnableChip()
-{
-    cli();
-    digitalWrite(m_nSelectPin, LOW);
-}
-
-void ENC28J60::DisableChip()
-{
-    digitalWrite(m_nSelectPin, HIGH);
-    sei();
-}
+//***NIC low-level control and interface functions***
 
 uint16_t ENC28J60::ReadRegWord(byte nAddress)
 {
@@ -414,6 +394,8 @@ void ENC28J60::WritePhyWord(byte nAddress, uint16_t nData)
     while(SPIReadRegister(MISTAT) & MISTAT_BUSY)
         ;
 }
+
+//***NIC high-level control and interface functions***
 
 byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
 {
@@ -455,7 +437,7 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     SPIWriteReg(MAADR0, pMac[5]);
     WritePhyWord(PHCON2, PHCON2_HDLDIS);
     SPISetBits(EIE, EIE_INTIE | EIE_PKTIE);
-    SetFullDuplex(true); //ENC28J60 defaults to half duplex - I want lib init default to be full duplex
+    SetFullDuplex(); //ENC28J60 defaults to half duplex - I want lib init default to be full duplex
     EnableReception();
 
     byte nRevision = SPIReadRegister(EREVID);
@@ -467,27 +449,27 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     return nRevision;
 }
 
-bool ENC28J60::IsLinkUp()
+void ENC28J60::EnableChip()
 {
-    return(ReadPhyWord(PHSTAT2) & PHSTAT2_LSTAT);
+    cli();
+    digitalWrite(m_nSelectPin, LOW);
 }
 
-bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
+void ENC28J60::DisableChip()
 {
-    TxBegin();
-    if(TxAppend(pBuffer, nLen))
-        return true;
-    TxEnd();
-    return false;
+    digitalWrite(m_nSelectPin, HIGH);
+    sei();
 }
 
-uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
+void ENC28J60::PowerUp()
 {
-    uint16_t nLen = 0;
-    if(RxBegin() > 0)
-        nLen = RxGetData(pBuffer, nSize);
-    RxEnd();
-    return nLen;
+    //1. Wake-up by clearing ECON2.PWRSV.
+    SPIClearBits(ECON2, ECON2_PWRSV);
+    //2. Wait at least 300us for the PHY to stabilize. To accomplish the delay, the host controller may poll ESTAT.CLKRDY and wait for it to become set.
+    while(!SPIReadRegister(ESTAT) & ESTAT_CLKRDY)
+        ;
+    //3. Restore receive capability by setting ECON1.RXEN.
+    EnableReception();
 }
 
 void ENC28J60::PowerDown()
@@ -505,15 +487,16 @@ void ENC28J60::PowerDown()
     SPISetBits(ECON2, ECON2_VRPS | ECON2_PWRSV);
 }
 
-void ENC28J60::PowerUp()
+void ENC28J60::EnableReception()
 {
-    //1. Wake-up by clearing ECON2.PWRSV.
-    SPIClearBits(ECON2, ECON2_PWRSV);
-    //2. Wait at least 300us for the PHY to stabilize. To accomplish the delay, the host controller may poll ESTAT.CLKRDY and wait for it to become set.
-    while(!SPIReadRegister(ESTAT) & ESTAT_CLKRDY)
-        ;
-    //3. Restore receive capability by setting ECON1.RXEN.
-    EnableReception();
+    SPISetBits(ECON1, ECON1_RXEN);
+}
+
+bool ENC28J60::DisableReception()
+{
+    bool bReturn = SPIReadRegister(ECON1) & ECON1_RXEN;
+    SPIClearBits(ECON1, ECON1_RXEN);
+    return bReturn;
 }
 
 void ENC28J60::EnableUnicast()
@@ -601,45 +584,58 @@ void ENC28J60::DisableMagicPacket()
     SPIWriteReg(ERXFCON, SPIReadRegister(ERXFCON) & ~ERXFCON_MPEN);
 }
 
-bool ENC28J60::BIST(byte nTest)
+void ENC28J60::SetFullDuplex()
 {
-    /*Four tests:
-        ENC29J60_BIST_RDFM      = Random data fill
-        ENC29J60_BIST_RDFM_RACE = Random data fill with race
-        ENC29J60_BIST_AFM       = Address fill
-        ENC29J60_BIST_PSFM      = Pattern shift fill
-    */
-
-    //Initialise and reset interface to ensure we are in a known state
-    SPIInit();
-    SPIReset();
-
-    //1. Program the EDMAST register pair to 0000h
-    WriteRegWord(EDMAST, 0);
-    //2. Program EDMAND and ERXND register pairs to 1FFFh
-    WriteRegWord(EDMAND, 0x1FFFu);
-    WriteRegWord(ERXND, 0x1FFFu);
-    //3. Configure the DMA for checksum generation by setting CSUMEN in ECON1
-    WriteRegWord(ECON1, ECON1_CSUMEN);
-    //4. Write the seed/initial shift value byte to the EBSTSD register (this is not necessary if Address Fill mode is used)
-    if(ENC28J60_BIST_AFM != nTest)
-        SPIWriteReg(EBSTSD, 0b10101010 | millis()); //random data
-    //5. Enable Test mode, select the desired test, select the desired port configuration for the test
-    WriteRegWord(EDMAST, nTest);
-    //6. Start the BIST by setting EBSTCON.BISTST
-    SPISetBits(EBSTCON, EBSTCON_BISTST);
-    //7. If Random Data Fill with Race mode is not used, start the DMA checksum by setting DMAST in ECON1. The DMA controller will read thememory at the same rate the BIST controller willwrite to it, so the DMA can be started any timeafter the BIST is started
-    if(ENC28J60_BIST_RDFM_RACE != nTest)
-        SPISetBits(ECON1, ECON1_DMAST);
-    //8. Wait for the DMA to complete by polling the DMAST bit
-    while(SPIReadRegister(ECON1) & ECON1_DMAST)
+    //!@todo Test full / half duplex
+    bool bRx = DisableReception();
+    //Wait for Tx to complete
+    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
         ;
-    //9.Compare the EDMACS registers with the EBSTCS registers
-    bool bResult = (SPIReadRegister(EDMACS) == SPIReadRegister(EBSTCS));
-
-    SPIReset();
-    return bResult;
+    uint16_t nMacon3 = SPIReadRegister(MACON3);
+    uint16_t nPhcon1 = SPIReadRegister(PHCON1);
+    SPIWriteReg(MACON3, nMacon3 | MACON3_FULDPX);
+    SPIWriteReg(PHCON1, nPhcon1 | PHCON1_PDPXMD);
+    if(bRx)
+        EnableReception();
 }
+
+void ENC28J60::SetHalfDuplex()
+{
+    bool bRx = DisableReception();
+    //Wait for Tx to complete
+    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
+        ;
+    uint16_t nMacon3 = SPIReadRegister(MACON3);
+    uint16_t nPhcon1 = SPIReadRegister(PHCON1);
+    SPIWriteReg(MACON3, nMacon3 & ~MACON3_FULDPX);
+    SPIWriteReg(PHCON1, nPhcon1 & ~PHCON1_PDPXMD);
+    if(bRx)
+        EnableReception();
+}
+
+void ENC28J60::EnableFlowControl()
+{
+    m_bFlowControl = true;
+    SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
+}
+
+void ENC28J60::DisableFlowControl()
+{
+    m_bFlowControl = false;
+    SPIWriteReg(MACON1, MACON1_MARXEN);
+}
+
+bool ENC28J60::IsLinkUp()
+{
+    return(ReadPhyWord(PHSTAT2) & PHSTAT2_LSTAT);
+}
+
+void ENC28J60::SetLedMode(uint16_t nMode)
+{
+    WritePhyWord(PHLCON, nMode);
+}
+
+//***Packet reception functions***
 
 int16_t ENC28J60::RxBegin()
 {
@@ -676,6 +672,14 @@ int16_t ENC28J60::RxBegin()
     return m_rxHeader.nSize;
 }
 
+uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen)
+{
+    uint16_t nQuant = min(nLen, m_rxHeader.nSize - m_nRxOffset); //Limit data length to available buffer
+    SPIReadBuf(pBuffer, nQuant); //Get data from NIC
+    m_nRxOffset += nQuant;
+    return nQuant;
+}
+
 uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset)
 {
     if(nOffset >= m_rxHeader.nSize)
@@ -688,22 +692,14 @@ uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset)
     return RxGetData(pBuffer, nLen);
 }
 
-uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen)
+uint16_t ENC28J60::RxGetPacketSize()
 {
-    uint16_t nQuant = min(nLen, m_rxHeader.nSize - m_nRxOffset); //Limit data length to available buffer
-    SPIReadBuf(pBuffer, nQuant); //Get data from NIC
-    m_nRxOffset += nQuant;
-    return nQuant;
+    return m_rxHeader.nSize;
 }
 
 uint16_t ENC28J60::RxGetStatus()
 {
     return m_rxHeader.nStatus;
-}
-
-uint16_t ENC28J60::GetRxPacketSize()
-{
-    return m_rxHeader.nSize;
 }
 
 void ENC28J60::RxEnd()
@@ -719,19 +715,16 @@ void ENC28J60::RxEnd()
     m_rxHeader.nSize = 0; //Clear packet size - used to indicate we are processing a packet
 }
 
-byte ENC28J60::TxGetStatus()
+uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
 {
-    if(SPIReadRegister(ECON1) & ECON1_TXRTS)
-        return ENC28J60_TX_IN_PROGRESS;
-    if(SPIReadRegister(EIR) & EIR_TXERIF)
-        return ENC28J60_TX_FAILED;
-    return ENC28J60_TX_SUCCESS;
+    uint16_t nLen = 0;
+    if(RxBegin() > 0)
+        nLen = RxGetData(pBuffer, nSize);
+    RxEnd();
+    return nLen;
 }
 
-void ENC28J60::TxClearError()
-{
-    SPIClearBits(ESTAT, ESTAT_LATECOL | ESTAT_TXABRT);
-}
+//***Packet transmission functions***
 
 void ENC28J60::TxBegin()
 {
@@ -772,48 +765,41 @@ void ENC28J60::TxRead(uint16_t nOffset, byte* pData, uint16_t nLen)
     WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
 }
 
+byte ENC28J60::TxGetStatus()
+{
+    if(SPIReadRegister(ECON1) & ECON1_TXRTS)
+        return ENC28J60_TX_IN_PROGRESS;
+    if(SPIReadRegister(EIR) & EIR_TXERIF)
+        return ENC28J60_TX_FAILED;
+    return ENC28J60_TX_SUCCESS;
+}
+
+void ENC28J60::TxClearError()
+{
+    SPIClearBits(ESTAT, ESTAT_LATECOL | ESTAT_TXABRT);
+}
+
+uint16_t ENC28J60::TxGetSize()
+{
+    return m_nTxLen;
+}
+
 void ENC28J60::TxEnd()
 {
     WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen - 1); //Define packet length by setting ETXND to point to last byte of frame
     SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
 }
 
-void ENC28J60::SetLedMode(uint16_t nMode)
+bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
 {
-    WritePhyWord(PHLCON, nMode);
+    TxBegin();
+    if(TxAppend(pBuffer, nLen))
+        return true;
+    TxEnd();
+    return false;
 }
 
-void ENC28J60::SetFullDuplex(bool bFullDuplex)
-{
-    //!@todo Test full / half duplex
-    bool bRx = DisableReception();
-    //Wait for Tx to complete
-    while(SPIReadRegister(ECON1) & ECON1_TXRTS)
-        ;
-    uint16_t nMacon3 = SPIReadRegister(MACON3);
-    uint16_t nPhcon1 = SPIReadRegister(PHCON1);
-    if(bFullDuplex)
-    {
-        SPIWriteReg(MACON3, nMacon3 | MACON3_FULDPX);
-        SPIWriteReg(PHCON1, nPhcon1 | PHCON1_PDPXMD);
-    }
-    else
-    {
-        SPIWriteReg(MACON3, nMacon3 & ~MACON3_FULDPX);
-        SPIWriteReg(PHCON1, nPhcon1 & ~PHCON1_PDPXMD);
-    }
-    if(bRx)
-        EnableReception();
-}
-
-void ENC28J60::EnableFlowControl(bool bEnable)
-{
-    m_bFlowControl = bEnable;
-    if(bEnable)
-        SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
-    else
-        SPIWriteReg(MACON1, MACON1_MARXEN);
-}
+//***Misc functions***
 
 void ENC28J60::DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination)
 {
@@ -843,9 +829,19 @@ void ENC28J60::DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination)
         ;
 }
 
-uint32_t ENC28J60::GetRxStatus()
+uint16_t ENC28J60::SwapBytes(uint16_t nValue)
 {
-    return m_rxHeader.nStatus;
+    return (((nValue & 0x00FF) << 8) + ((nValue & 0xFF00) >> 8));
+}
+
+void ENC28J60::GetMac(byte* pMac)
+{
+    pMac[0] = SPIReadRegister(MAADR5);
+    pMac[1] = SPIReadRegister(MAADR4);
+    pMac[2] = SPIReadRegister(MAADR3);
+    pMac[3] = SPIReadRegister(MAADR2);
+    pMac[4] = SPIReadRegister(MAADR1);
+    pMac[5] = SPIReadRegister(MAADR0);
 }
 
 uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
@@ -875,7 +871,48 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
     return SwapBytes(nResult); //!@todo Should we return network byte order or host byte order? Should be consistent with other functions.
 }
 
-uint16_t ENC28J60::SwapBytes(uint16_t nValue)
+bool ENC28J60::BIST(byte nTest)
 {
-    return (((nValue & 0x00FF) << 8) + ((nValue & 0xFF00) >> 8));
+    //!@todo BIST stops NIC from sending packets
+    /*Four tests:
+        ENC29J60_BIST_RDFM      = Random data fill
+        ENC29J60_BIST_RDFM_RACE = Random data fill with race
+        ENC29J60_BIST_AFM       = Address fill
+        ENC29J60_BIST_PSFM      = Pattern shift fill
+    */
+
+    //Initialise and reset interface to ensure we are in a known state
+    SPIInit();
+    SPIReset();
+
+    //Store MAC to allow reseting of nic
+    byte pMac[6];
+    GetMac(pMac);
+
+    //1. Program the EDMAST register pair to 0000h
+    WriteRegWord(EDMAST, 0);
+    //2. Program EDMAND and ERXND register pairs to 1FFFh
+    WriteRegWord(EDMAND, 0x1FFFu);
+    WriteRegWord(ERXND, 0x1FFFu);
+    //3. Configure the DMA for checksum generation by setting CSUMEN in ECON1
+    WriteRegWord(ECON1, ECON1_CSUMEN);
+    //4. Write the seed/initial shift value byte to the EBSTSD register (this is not necessary if Address Fill mode is used)
+    if(ENC28J60_BIST_AFM != nTest)
+        SPIWriteReg(EBSTSD, 0b10101010 | millis()); //random data
+    //5. Enable Test mode, select the desired test, select the desired port configuration for the test
+    WriteRegWord(EDMAST, nTest);
+    //6. Start the BIST by setting EBSTCON.BISTST
+    SPISetBits(EBSTCON, EBSTCON_BISTST);
+    //7. If Random Data Fill with Race mode is not used, start the DMA checksum by setting DMAST in ECON1. The DMA controller will read thememory at the same rate the BIST controller willwrite to it, so the DMA can be started any timeafter the BIST is started
+    if(ENC28J60_BIST_RDFM_RACE != nTest)
+        SPISetBits(ECON1, ECON1_DMAST);
+    //8. Wait for the DMA to complete by polling the DMAST bit
+    while(SPIReadRegister(ECON1) & ECON1_DMAST)
+        ;
+    //9.Compare the EDMACS registers with the EBSTCS registers
+    bool bResult = (SPIReadRegister(EDMACS) == SPIReadRegister(EBSTCS));
+
+    SPIReset();
+    Initialize(pMac, m_nSelectPin); //!@todo Do we need to re-initalise?
+    return bResult;
 }
