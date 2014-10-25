@@ -247,21 +247,20 @@ static const uint16_t TX_BUFFER_START   = TX_BUFFER_PPCB + 1; //!< Start of tran
 static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
 static const uint16_t RX_BUFFER_END     = TX_BUFFER_PPCB - 1; //!< End of recieve circular buffer
 
-static const byte MAX_RX_PACKET         = 3; //!< Maximum quantity of packets to allow in receive buffer before asserting flow control pause
-
 //***SPI bus interface functions***
 
 void ENC28J60::SPIInit()
 {
-    pinMode(SS, OUTPUT);
+    //Configure SPI interface pins
+    pinMode(SS, OUTPUT); //SS pin must be output for SPI to work as master, even if another pin is used for CS
     digitalWrite(SS, HIGH);
     pinMode(MOSI, OUTPUT);
     pinMode(SCK, OUTPUT);
     pinMode(MISO, INPUT);
 
-    digitalWrite(MOSI, HIGH);
-    digitalWrite(MOSI, LOW);
-    digitalWrite(SCK, LOW);
+//    digitalWrite(MOSI, HIGH);
+//    digitalWrite(MOSI, LOW);
+//    digitalWrite(SCK, LOW);
 
     SPCR = bit(SPE) | bit(MSTR); // Enable SPI as master, disable interupt, shift msb first, clock idle when low, sample on rising edge, fastest speed fosc/4
     bitSet(SPSR, SPI2X); //Enable SPI double speed (fosc/2)
@@ -345,15 +344,6 @@ void ENC28J60::SPIClearBits(byte nRegister, byte nBits)
     DisableChip();
 }
 
-void ENC28J60::SPIReset()
-{
-    PowerUp(); //erata B7.19 - reset does not work when in power save mode
-    EnableChip();
-    SPITransfer(ENC28J60_SPI_SC);
-    DisableChip();
-    delay(1); //erata B7.2
-}
-
 //***NIC low-level control and interface functions***
 
 uint16_t ENC28J60::ReadRegWord(byte nAddress)
@@ -403,15 +393,16 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     m_bBroadcastEnabled = true;
     m_bFlowControl = true;
     m_bRxPause = false;
-    if(bitRead(SPCR, SPE) == 0)
-        SPIInit();
     m_nSelectPin = nChipSelectPin;
     pinMode(m_nSelectPin, OUTPUT);
     DisableChip();
+    if(bitRead(SPCR, SPE) == 0)
+        SPIInit(); //SPI not enabled so intialise it
 
-    SPIReset();
+    Reset();
 
-    DisableReception();
+    DisableReception(); //Avoid incoming traffic effecting configuration
+    //Configure internal buffers
     m_rxHeader.nNextPacket = RX_BUFFER_START;
     m_rxHeader.nSize = 0;
     m_rxHeader.nStatus = 0;
@@ -421,32 +412,37 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     WriteRegWord(ERXND, RX_BUFFER_END);
     WriteRegWord(ETXST, TX_BUFFER_PPCB);
     WriteRegWord(ETXND, TX_BUFFER_END);
-    WriteRegWord(EPMM0, 0x303f);
-    WriteRegWord(EPMCS, 0xf7f9);
+    //Configure MAC
     SPIWriteReg(MACON1, MACON1_MARXEN|MACON1_TXPAUS|MACON1_RXPAUS);
     SPIWriteReg(MACON2, 0x00);
     SPIWriteReg(MACON3, MACON3_PADCFG0|MACON3_TXCRCEN|MACON3_FRMLNEN);
     WriteRegWord(MAIPG, 0x0c12);
-    SPIWriteReg(MABBIPG, 0x12);
-    WriteRegWord(MAMXFL, MAX_FRAMELEN);
-    SPIWriteReg(MAADR5, pMac[0]);
+    WriteRegWord(MAMXFL, MAX_FRAMELEN + 4); //Set maximum frame length, including 4 bytes for Ethernet CRC
+    SPIWriteReg(MAADR5, pMac[0]); //Set MAC address
     SPIWriteReg(MAADR4, pMac[1]);
     SPIWriteReg(MAADR3, pMac[2]);
     SPIWriteReg(MAADR2, pMac[3]);
     SPIWriteReg(MAADR1, pMac[4]);
     SPIWriteReg(MAADR0, pMac[5]);
-    WritePhyWord(PHCON2, PHCON2_HDLDIS);
-    SPISetBits(EIE, EIE_INTIE | EIE_PKTIE);
-    SetFullDuplex(); //ENC28J60 defaults to half duplex - I want lib init default to be full duplex
+    WritePhyWord(PHCON2, PHCON2_HDLDIS); //Disable loopback when in half duplex
+    SPIWriteReg(EIE, 0); //Disable all interupts
+
+    SetHalfDuplex(); //ENC28J60 does not auto-negotiate and presents as half duplex so safest mode is to use half duplex by default
     EnableReception();
 
     byte nRevision = SPIReadRegister(EREVID);
-    // microchip forgot to step the number on the silcon when they
-    // released the revision B7. 6 is now rev B7. We still have
-    // to see what they do when they release B8. At the moment
-    // there is no B8 out yet
-    if(nRevision > 5) ++nRevision;
+    if(6 == nRevision)
+        ++nRevision; //Silicon revisions B6 & B7 share the same revision number (Microchip release error) so let's call it 7
     return nRevision;
+}
+
+void ENC28J60::Reset()
+{
+    PowerUp(); //erata B7.19 - reset does not work when in power save mode
+    EnableChip();
+    SPITransfer(ENC28J60_SPI_SC);
+    DisableChip();
+    delay(1); //erata B7.2
 }
 
 void ENC28J60::EnableChip()
@@ -595,6 +591,7 @@ void ENC28J60::SetFullDuplex()
     uint16_t nPhcon1 = SPIReadRegister(PHCON1);
     SPIWriteReg(MACON3, nMacon3 | MACON3_FULDPX);
     SPIWriteReg(PHCON1, nPhcon1 | PHCON1_PDPXMD);
+    SPIWriteReg(MABBIPG, 0x15);
     if(bRx)
         EnableReception();
 }
@@ -609,6 +606,7 @@ void ENC28J60::SetHalfDuplex()
     uint16_t nPhcon1 = SPIReadRegister(PHCON1);
     SPIWriteReg(MACON3, nMacon3 & ~MACON3_FULDPX);
     SPIWriteReg(PHCON1, nPhcon1 & ~PHCON1_PDPXMD);
+    SPIWriteReg(MABBIPG, 0x12);
     if(bRx)
         EnableReception();
 }
@@ -647,16 +645,16 @@ int16_t ENC28J60::RxBegin()
     byte nPktCnt = SPIReadRegister(EPKTCNT);
     if(0 == nPktCnt)
         return 0; //There are no packets to process
+    //!@todo Consider whether flow control should be in RxBegin, RxEnd or elsewhere
     if(m_bFlowControl)
     {
-        //!@todo Use available memory rather than quantity of packets
-        if(nPktCnt >= MAX_RX_PACKET && !m_bRxPause)
+        if(RxGetFreeSpace() < MAX_FRAMELEN && !m_bRxPause)
         {
             //Too many packets and not yet asserted flow control pause so do it now
             SPIWriteReg(EFLOCON, 0x02);
             m_bRxPause = true;
         }
-        else if(m_bRxPause && nPktCnt < MAX_RX_PACKET)
+        else if(m_bRxPause && RxGetFreeSpace() >= MAX_FRAMELEN)
         {
             //Flow control asserted and fallen below packet threshold so unassert flow control pause
             SPIWriteReg(EFLOCON, 0x03);
@@ -692,16 +690,6 @@ uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset)
     return RxGetData(pBuffer, nLen);
 }
 
-uint16_t ENC28J60::RxGetPacketSize()
-{
-    return m_rxHeader.nSize;
-}
-
-uint16_t ENC28J60::RxGetStatus()
-{
-    return m_rxHeader.nStatus;
-}
-
 void ENC28J60::RxEnd()
 {
     if(0 == m_rxHeader.nSize)
@@ -722,6 +710,41 @@ uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
         nLen = RxGetData(pBuffer, nSize);
     RxEnd();
     return nLen;
+}
+
+uint16_t ENC28J60::RxGetPacketSize()
+{
+    return m_rxHeader.nSize;
+}
+
+uint16_t ENC28J60::RxGetStatus()
+{
+    return m_rxHeader.nStatus;
+}
+
+bool ENC28J60::RxIsBroadcast()
+{
+    return m_rxHeader.nStatus & ENC28J60_RX_BROADCAST;
+}
+
+bool ENC28J60::RxIsMulticast()
+{
+    return m_rxHeader.nStatus & ENC28J60_RX_MULTICAST;
+}
+
+uint16_t ENC28J60::RxGetFreeSpace()
+{
+    byte nCount = SPIReadRegister(EPKTCNT); //get packet count to allow checking the reading of write pointer is atomic
+    uint16_t nWrpt = ReadRegWord(ERXWRPT); //read write pointer
+    if(SPIReadRegister(EPKTCNT) != nCount) //chance of change of MSB/LSB parts of write pointer
+        nWrpt = ReadRegWord(ERXWRPT); //re-read write pointer
+    //!@todo Check free space calculation is accurate
+    if(nWrpt > m_rxHeader.nNextPacket)
+        return (RX_BUFFER_END - RX_BUFFER_START) - (nWrpt - m_rxHeader.nNextPacket);
+    else if(nWrpt == m_rxHeader.nNextPacket)
+        return (RX_BUFFER_END - RX_BUFFER_START);
+    else
+        return m_rxHeader.nNextPacket - nWrpt - 1;
 }
 
 //***Packet transmission functions***
@@ -883,7 +906,7 @@ bool ENC28J60::BIST(byte nTest)
 
     //Initialise and reset interface to ensure we are in a known state
     SPIInit();
-    SPIReset();
+    Reset();
 
     //Store MAC to allow reseting of nic
     byte pMac[6];
@@ -912,7 +935,6 @@ bool ENC28J60::BIST(byte nTest)
     //9.Compare the EDMACS registers with the EBSTCS registers
     bool bResult = (SPIReadRegister(EDMACS) == SPIReadRegister(EBSTCS));
 
-    SPIReset();
-    Initialize(pMac, m_nSelectPin); //!@todo Do we need to re-initalise?
+    Initialize(pMac, m_nSelectPin);
     return bResult;
 }

@@ -16,6 +16,7 @@ static const byte TEST_TX_MIN_PACKET    = '3';
 static const byte TEST_TX_MAX_PACKET    = '4';
 static const byte TEST_DUPLEX       = '5';
 static const byte TEST_BIST         = '6';
+static const byte TEST_FREE         = '7';
 static const byte TEST_DUMP         = 'd';
 static const byte TEST_RESET        = 'r';
 static const byte TEST_POWER        = 'p';
@@ -42,7 +43,7 @@ bool bMulticast; //!< True to enable multicast reception
 bool bBroadcast; //!< True to enable broadcast reception
 bool bFlow; //!< True if flow control enabled
 
-///** Show the content of the ENC28J60 registers */
+/////** Show the content of the ENC28J60 registers */
 //void DumpRegisters()
 //{
 //    Serial.println(" - Dump registers:");
@@ -63,7 +64,7 @@ bool bFlow; //!< True if flow control enabled
 //                nAddress = nRegister | (nBank * 0x20) | 0x80; //M register
 //            else
 //                nAddress = nRegister | (nBank * 0x20);
-//            nResult = nic.SPIReadRegister(nAddress);
+//            nResult = nic.ReadRegByte(nAddress);
 //            Serial.print("[");
 //            if(nAddress < 0x10)
 //                Serial.print("0x0");
@@ -83,12 +84,6 @@ bool bFlow; //!< True if flow control enabled
 //
 //}
 
-///** Reset the SPI interface */
-//void Reset()
-//{
-//    nic.SPIReset();
-//}
-
 /** Display the menu */
 void ShowMenu()
 {
@@ -101,13 +96,15 @@ void ShowMenu()
     Serial.println(F("4. *Send maximum packet"));
     Serial.println(F("5. *Toggle duplex"));
     Serial.println(F("6. *Built-in self tests"));
+    Serial.println(F("7. *Show free Rx buffer space"));
 //    Serial.println(F("d. *Dump registers"));
-//    Serial.println(F("r. *Reset NIC"));
+    Serial.println(F("r. *Reset NIC"));
     Serial.println(F("p. *Toggle power"));
     Serial.println(F("u. *Toggle unicast reception"));
     Serial.println(F("m. *Toggle multicast reception"));
     Serial.println(F("b. *Toggle broadcast reception"));
     Serial.println(F("f. *Toggle flow control"));
+    Serial.println(F("i. *Initialise"));
     Serial.println(F("* Does not change current test mode"));
 }
 
@@ -119,7 +116,7 @@ void initialse()
     bBroadcast = true;
     bMulticast = false;
     bUnicast = true;
-    bDuplex = true;
+    bDuplex = false;
     nRevision = nic.Initialize(pMac, ETHERNET_CS_PIN);
     if(nRevision)
     {
@@ -218,10 +215,10 @@ void loop()
                 byte cData = 0;
                 if(TEST_TX_MAX_PACKET == nInput)
                 {
-                    for(int i = 0; i < 1470; ++i) //!@todo fails for udp payload > 1468
-                        nic.TxAppend(&cData, 1);
-//                    while(!nic.TxAppend(&cData, 1))
-//                        ++cData;
+//                    for(int i = 0; i < 1474; ++i) //!@todo fails for udp payload > 1468
+//                        nic.TxAppend(&cData, 1);
+                    while(!nic.TxAppend(&cData, 1))
+                        ++cData;
                 }
                 //Calculate UDP length
                 uint16_t nLen = ENC28J60::SwapBytes(nic.TxGetSize() - 34);
@@ -233,16 +230,17 @@ void loop()
                 nic.TxWrite(14+10, (byte*)&nChecksum, 2);
                 nic.TxEnd(); //Send packet
 
-                Serial.println(" - maximum UDP packet sent");
+                Serial.print("UDP packet sent, size=");
+                Serial.println(nic.TxGetSize());
                 break;
             }
 //            case TEST_DUMP:
 //                DumpRegisters();
 //                break;
-//            case TEST_RESET:
-//                Reset();
-//                Serial.println(" - Reset");
-//                break;
+            case TEST_RESET:
+                nic.Reset();
+                Serial.println(" - Reset");
+                break;
             case TEST_POWER:
                 bPower = !bPower;
                 if(bPower)
@@ -319,6 +317,10 @@ void loop()
                 Serial.print("BIST ");
                 Serial.println(nic.BIST()?"Pass":"Fail");
                 break;
+            case TEST_FREE:
+                Serial.print("Free Rx space = ");
+                Serial.println(nic.RxGetFreeSpace());
+                break;
         }
     }
 
@@ -370,7 +372,12 @@ void loop()
                     Serial.print(" !!Packet size error: ");
                 else
                     Serial.print(" size=");
-                Serial.println(nRx);
+                Serial.print(nRx);
+                if(nic.RxIsBroadcast())
+                    Serial.print(" Broadcast");
+                if(nic.RxIsMulticast())
+                    Serial.print(" Multicast");
+                Serial.println();
             }
             nic.RxEnd();
             break;

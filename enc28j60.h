@@ -15,6 +15,9 @@
 // 2010-05-20 <jc@wippler.nl>
 // 2014-10-17 <brian@riban.co.uk>
 
+//!@todo Add version to doxygen
+//!@todo Add ability to configure and use interupts
+
 /** @note   ENC28J60 memory allocation is made thus:
 *               0x0000 .. 0x1A0C Packet recieve circular buffer (RX_BUFFER_START .. TX_BUFFER_START - 1)
 *               0x1A0C .. 0x1FFF Transmission buffer (TX_BUFFER_START .. TX_BUFFER_END)
@@ -71,11 +74,16 @@ class ENC28J60
 {
     public:
         /**   @brief  Initialise network interface
-        *     @param  macaddr Pointer to 4 byte hardware (MAC) address
-        *     @param  nChipSelectPin Arduino pin used for chip select (enable network interface SPI bus). Default = 8
+        *     @param  macaddr Pointer to 6 byte hardware (MAC) address
+        *     @param  nChipSelectPin Arduino pin used for chip select (enable network interface SPI bus). Default = 10
         *     @return <i>uint8_t</i> ENC28J60 firmware version or zero on failure.
         */
         byte Initialize(const byte* pMac, byte nChipSelectPin = 10);
+
+        /** @brief  Reset NIC
+        *   @note   Will power up NIC if in powersave mode
+        */
+        void Reset();
 
         /** @brief  Wake ENC28J60 from sleep mode
         *   @note   This also enables packet reception
@@ -166,10 +174,11 @@ class ENC28J60
         void DisableMagicPacket();
 
         /** @brief  Sets duplex to full
+        *   @note   ENC28J60 does not support auto negotiate and presents as half duplex. Both ends of link must be manually configured to use full duplex.
         */
         void SetFullDuplex();
 
-        /** @brief  Sets duplex to false
+        /** @brief  Sets duplex to half
         */
         void SetHalfDuplex();
 
@@ -218,6 +227,19 @@ class ENC28J60
         */
         uint16_t RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset);
 
+        /** @brief  Finishes handling recieved packet
+        *   @note   This call frees the space within the recieve buffer used by the packet
+        */
+        void RxEnd();
+
+        /** @brief  Copy recieved packet to data buffer
+        *   @param  pBuffer Pointer to a buffer to recieve data
+        *   @param  nSize Maximum quantity of bytes to read
+        *   @return <i>uint16_t</i> Quantity of bytes actually copied
+        *   @note   Use this function to handle whole packets (with suitable sized buffer). Use Rx transaction functions to access NIC recieve buffer directly
+        */
+        uint16_t PacketReceive(byte* pBuffer, uint16_t nSize);
+
         /** @brief  Gets the size of the recieved packet
         *   @return <i>uint16_t</i> Quantity of bytes in recieved packet
         *   @note   ERDPT read pointer set to start of Ethernet packet (destination address)
@@ -232,18 +254,20 @@ class ENC28J60
         */
         uint16_t RxGetStatus();
 
-        /** @brief  Finishes handling recieved packet
-        *   @note   This call frees the space within the recieve buffer used by the packet
+        /** @brief  Checks for recieved broadcast packet
+        *   @return <i>bool</i> True if last recieved packet was a broadcast packet
         */
-        void RxEnd();
+        bool RxIsBroadcast();
 
-        /** @brief  Copy recieved packet to data buffer
-        *   @param  pBuffer Pointer to a buffer to recieve data
-        *   @param  nSize Maximum quantity of bytes to read
-        *   @return <i>uint16_t</i> Quantity of bytes actually copied
-        *   @note   Use this function to handle whole packets (with suitable sized buffer). Use Rx transaction functions to access NIC recieve buffer directly
+        /** @brief  Checks for recieved multicast packet
+        *   @return <i>bool</i> True if last recieved packet was a multicast packet
         */
-        uint16_t PacketReceive(byte* pBuffer, uint16_t nSize);
+        bool RxIsMulticast();
+
+        /** @brief  Get the unused space in the recieve buffer
+        *   @return <i>uint16_t</i> Quantity of unused bytes
+        */
+        uint16_t RxGetFreeSpace();
 
         //Transmission functions
         /** @brief  Starts a transmission transaction
@@ -407,11 +431,6 @@ class ENC28J60
         *   @note   May only be used for Ethernet registers <b>not</b> MAC or MII registers
         */
         void SPIClearBits(byte nRegister, byte nBits);
-
-        /** @brief  Reset NIC
-        *   @note   Will power up NIC if in powersave mode
-        */
-        void SPIReset();
 
         //Register manipulation
         /** @brief  Read 16-bit word from register
