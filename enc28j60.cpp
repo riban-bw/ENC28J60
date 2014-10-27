@@ -690,6 +690,34 @@ uint16_t ENC28J60::RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset)
     return RxGetData(pBuffer, nLen);
 }
 
+byte ENC28J60::RxGetByte()
+{
+    byte nValue;
+    RxGetData((byte*)&nValue, 1);
+    return nValue;
+}
+
+byte ENC28J60::RxGetByte(uint16_t nOffset)
+{
+    byte nValue;
+    RxGetData((byte*)&nValue, 1, nOffset);
+    return nValue;
+}
+
+uint16_t ENC28J60::RxGetWord()
+{
+    uint16_t nValue;
+    RxGetData((byte*)&nValue, 2);
+    return SwapBytes(nValue);
+}
+
+uint16_t ENC28J60::RxGetWord(uint16_t nOffset)
+{
+    uint16_t nValue;
+    RxGetData((byte*)&nValue, 2, nOffset);
+    return SwapBytes(nValue);
+}
+
 void ENC28J60::RxEnd()
 {
     if(0 == m_rxHeader.nSize)

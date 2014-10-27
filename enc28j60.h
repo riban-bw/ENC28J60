@@ -129,7 +129,7 @@ class ENC28J60
         /** @brief  Enables reception of mulitcast messages
         *   @note   This will increase load on recieved data handling
         */
-        void EnableMulticast ();
+        void EnableMulticast();
 
         /** @brief  Disable reception of mulitcast messages
         *   @note   This will reduce load on recieved data handling
@@ -223,9 +223,35 @@ class ENC28J60
         *   @param  nLen Maximum quantity of bytes to read
         *   @param  nOffset Position within packet to read
         *   @return <i>uint16_t</i> Quantity of bytes read
-        *   @note   Advances ERDPT read pointer position by nymber of bytes read
+        *   @note   Advances ERDPT read pointer position by nymber of bytes read beyond nOffset
         */
         uint16_t RxGetData(byte* pBuffer, uint16_t nLen, uint16_t nOffset);
+
+        /** @brief  Gets one byte from recieve buffer
+        *   @return <i>byte</i> Value
+        *   @note   Advances ERDPT read pointer position by one
+        */
+        byte RxGetByte();
+
+        /** @brief  Gets one byte from specific location within recieve buffer
+        *   @param  nOffset Position within buffer to read byte
+        *   @return <i>byte</i> Value
+        *   @note   Advances ERDPT read pointer to immediately after byte read
+        */
+        byte RxGetByte(uint16_t nOffset);
+
+        /** @brief  Gets 16-bit word from recieve buffer
+        *   @return <i>uint16_t</i> 16-bit value in host byte order
+        *   @note   Advances ERDPT read pointer position by two
+        */
+        uint16_t RxGetWord();
+
+        /** @brief  Gets 16-bit word from specific location within recieve buffer
+        *   @param  nOffset Postion within buffer to read word
+        *   @return <i>uint16_t</i> 16-bit value in host byte order
+        *   @note   Advances ERDPT read pointer to immediately after word read
+        */
+        uint16_t RxGetWord(uint16_t nOffset);
 
         /** @brief  Finishes handling recieved packet
         *   @note   This call frees the space within the recieve buffer used by the packet
@@ -343,6 +369,7 @@ class ENC28J60
         *   @param  nEnd Offset in Rx buffer of last byte to copy
         *   @param  nDestination Offset in Tx buffer of first byte to copy to
         *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44us to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
+        *   @todo   Should we use length instead of nEnd?
         */
         void DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination);
 
