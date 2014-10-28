@@ -430,10 +430,7 @@ byte ENC28J60::Initialize(const byte* pMac, byte nChipSelectPin)
     SetHalfDuplex(); //ENC28J60 does not auto-negotiate and presents as half duplex so safest mode is to use half duplex by default
     EnableReception();
 
-    byte nRevision = SPIReadRegister(EREVID);
-    if(6 == nRevision)
-        ++nRevision; //Silicon revisions B6 & B7 share the same revision number (Microchip release error) so let's call it 7
-    return nRevision;
+    return SPIReadRegister(EREVID);
 }
 
 void ENC28J60::Reset()
@@ -760,6 +757,12 @@ bool ENC28J60::RxIsMulticast()
     return m_rxHeader.nStatus & ENC28J60_RX_MULTICAST;
 }
 
+byte ENC28J60::RxGetPacketCount()
+{
+    return SPIReadRegister(EPKTCNT);
+}
+
+
 uint16_t ENC28J60::RxGetFreeSpace()
 {
     byte nCount = SPIReadRegister(EPKTCNT); //get packet count to allow checking the reading of write pointer is atomic
@@ -809,12 +812,34 @@ void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
     WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
 }
 
-void ENC28J60::TxRead(uint16_t nOffset, byte* pData, uint16_t nLen)
+void ENC28J60::TxWriteByte(uint16_t nOffset, byte nData)
 {
     WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
-    SPIReadBuf(pData, nLen);
+    SPIWriteBuf(&nData, 1);
     WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
 }
+
+void ENC28J60::TxWriteWord(uint16_t nOffset, uint16_t nData)
+{
+    uint16_t nByteOrder = SwapBytes(nData);
+    WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
+    SPIWriteBuf((byte*)&nByteOrder, 2);
+    WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
+}
+
+void ENC28J60::TxSwap(uint16_t nOffset1, uint16_t nOffset2, uint16_t nLen)
+{
+    byte pBuffer1[nLen];
+    byte pBuffer2[nLen];
+    WriteRegWord(ERDPT, TX_BUFFER_START + nOffset1);
+    SPIReadBuf(pBuffer1, nLen);
+    WriteRegWord(ERDPT, TX_BUFFER_START + nOffset2);
+    SPIReadBuf(pBuffer2, nLen);
+    TxWrite(nOffset1, pBuffer2, nLen);
+    TxWrite(nOffset2, pBuffer1, nLen);
+    WriteRegWord(ERDPT, m_nRxPacketPtr + m_nRxOffset; //Recover Rx read position
+}
+
 
 byte ENC28J60::TxGetStatus()
 {
@@ -852,22 +877,22 @@ bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
 
 //***Misc functions***
 
-void ENC28J60::DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination)
+void ENC28J60::DMACopy(uint16_t nDestination, uint16_t nStart, uint16_t nLen)
 {
     /*Appropriately program the EDMAST, EDMAND and EDMADST register pairs. The EDMAST registers should point to the first byte to copy from, the EDMAND registers should point to the
     last byte to copy and the EDMADST registers should point to the first byte in the destination range. The destination range will always be linear, never wrapping at any values except from
     8191 to 0 (the 8-Kbyte memory boundary). Extreme care should be taken when programming the Start and End Pointers to prevent a never ending DMA operation which would overwrite the entire 8-Kbyte buffer.
     */
-    if(nStart >= m_rxHeader.nSize || nEnd >= m_rxHeader.nSize || nStart >= nEnd)
+    if(nStart >= m_rxHeader.nSize || nStart + nLen >= m_rxHeader.nSize)
         return;
     if(RX_BUFFER_END - m_nRxPacketPtr < nStart) //wraps receive circular buffer
         WriteRegWord(EDMAST, RX_BUFFER_START + nStart - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
     else
         WriteRegWord(EDMAST, m_nRxPacketPtr + nStart);
-    if(RX_BUFFER_END - m_nRxPacketPtr < nEnd) //wraps receive circular buffer
-        WriteRegWord(EDMAST, RX_BUFFER_START + nEnd - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
+    if(RX_BUFFER_END - m_nRxPacketPtr < nStart + nLen) //wraps receive circular buffer
+        WriteRegWord(EDMAST, RX_BUFFER_START + nStart + nLen - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
     else
-        WriteRegWord(EDMAST, m_nRxPacketPtr + nEnd);
+        WriteRegWord(EDMAST, m_nRxPacketPtr + nStart + nLen);
 
     WriteRegWord(EDMADST, TX_BUFFER_START + nDestination);
     //Verify that ECON1.CSUMEN is clear.

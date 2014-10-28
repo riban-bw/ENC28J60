@@ -25,6 +25,7 @@ static const byte TEST_MULTICAST    = 'm';
 static const byte TEST_BROADCAST    = 'b';
 static const byte TEST_FLOW         = 'f';
 static const byte TEST_INIT         = 'i';
+static const byte TEST_VERSION      = 'v';
 
 
 static const uint16_t LED_MODE_NORMAL   = 0x3422;
@@ -105,6 +106,7 @@ void ShowMenu()
     Serial.println(F("b. *Toggle broadcast reception"));
     Serial.println(F("f. *Toggle flow control"));
     Serial.println(F("i. *Initialise"));
+    Serial.println(F("v. *Show silicon version"));
     Serial.println(F("* Does not change current test mode"));
 }
 
@@ -230,7 +232,7 @@ void loop()
                 nic.TxWrite(14+10, (byte*)&nChecksum, 2);
                 nic.TxEnd(); //Send packet
 
-                Serial.print("UDP packet sent, size=");
+                Serial.print(F("UDP packet sent, size="));
                 Serial.println(nic.TxGetSize());
                 break;
             }
@@ -264,7 +266,7 @@ void loop()
                 break;
             case TEST_UNICAST:
                 bUnicast = !bUnicast;
-                Serial.print(" - Unicast reception ");
+                Serial.print(F(" - Unicast reception "));
                 if(bUnicast)
                 {
                     nic.EnableUnicast();
@@ -278,7 +280,7 @@ void loop()
                 break;
             case TEST_MULTICAST:
                 bMulticast = !bMulticast;
-                Serial.print(" - Multicast reception ");
+                Serial.print(F(" - Multicast reception "));
                 if(bMulticast)
                 {
                     nic.EnableMulticast();
@@ -292,7 +294,7 @@ void loop()
                 break;
             case TEST_BROADCAST:
                 bBroadcast = !bBroadcast;
-                Serial.print(" - Broadcast reception ");
+                Serial.print(F(" - Broadcast reception "));
                 if(bBroadcast)
                 {
                     nic.EnableBroadcast();
@@ -310,16 +312,20 @@ void loop()
                     nic.EnableFlowControl();
                 else
                     nic.DisableFlowControl();
-                Serial.print(" - Flow control ");
+                Serial.print(F(" - Flow control ");
                 Serial.println(bFlow?"enabled":"disabled");
                 break;
             case TEST_BIST:
-                Serial.print("BIST ");
+                Serial.print(F("BIST "));
                 Serial.println(nic.BIST()?"Pass":"Fail");
                 break;
             case TEST_FREE:
-                Serial.print("Free Rx space = ");
+                Serial.print(F("Free Rx space = "));
                 Serial.println(nic.RxGetFreeSpace());
+                break;
+            case TEST_VERSION:
+                Serial.print(F("Silicon version = "));
+                Serila.print(nic.GetVersion());
                 break;
         }
     }

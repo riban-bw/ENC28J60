@@ -290,6 +290,11 @@ class ENC28J60
         */
         bool RxIsMulticast();
 
+        /** @brief  Get the quantity of unprocessed received packets
+        *   @return <i>byte</i> Quantity of packets
+        */
+        byte RxGetPacketCount();
+
         /** @brief  Get the unused space in the recieve buffer
         *   @return <i>uint16_t</i> Quantity of unused bytes
         */
@@ -321,14 +326,32 @@ class ENC28J60
         */
         void TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen);
 
-        /** @brief  Read data from specific position in write buffer
-        *   @param  nOffset Postion offset from start of Tx buffer, i.e. 0=first byte of buffer
-        *   @param  pData Pointer to buffer to populate with read data
-        *   @param  nLen Quantity of bytes to read
+        /** @brief  Write a single byte to specific position in write buffer
+        *   @param  nOffset Position offset from start of Tx buffer, i.e. 0=first byte of buffer
+        *   @param  nData Data to write
         *   @note   Leaves append buffer cursor and Tx packet size counter unchanged.
         *   @note   Offset is relative to start of packet frame data, not the 'per packet control byte' used by the ENC28J60
+        *   @todo   Add unit test for TxWriteByte
         */
-        void TxRead(uint16_t nOffset, byte* pData, uint16_t nLen);
+        void TxWriteByte(uint16_t nOffset, byte nData, uint16_t nLen);
+
+        /** @brief  Write a two byte word to specific position in write buffer
+        *   @param  nOffset Position offset from start of Tx buffer, i.e. 0=first byte of buffer
+        *   @param  nData Data to write
+        *   @note   nData is host byte order, word is written network byte order, i.e. bytes are swapped before writing to buffer
+        *   @note   Leaves append buffer cursor and Tx packet size counter unchanged.
+        *   @note   Offset is relative to start of packet frame data, not the 'per packet control byte' used by the ENC28J60
+        *   @todo   Add unit test for TxWriteWord
+        */
+        void TxWriteWord(uint16_t nOffset, uint16_t nData, uint16_t nLen);
+
+        /** @brief  Swap two ranges of bytes in TxBuffer
+        *   @param  nOffset1 Position of first range
+        *   @param  nOffset2 Position of second range
+        *   @param  nLen Quantity of bytes to swap
+        *   @todo   Add unit test for TxSwap
+        */
+        void TxSwap(uint16_t nOffset1, uint16_t nOffset2, uint16_t nLen);
 
         /** @brief  Check if last transmission was successful
         *   @return <i>byte</i> Result: ENC28J60_TX_SUCCESS | ENC28J60_TX_IN_PROGRESS | ENC28J60_TX_FAILED
@@ -362,16 +385,14 @@ class ENC28J60
         */
         bool PacketSend(byte* pBuffer, uint16_t nLen);
 
-
         //Misc functions
         /** @brief  Performs driect memory access transfer of data from Rx buffer to Tx buffer
-        *   @param  nStart Offset in Rx buffer of first byte to copy
-        *   @param  nEnd Offset in Rx buffer of last byte to copy
         *   @param  nDestination Offset in Tx buffer of first byte to copy to
+        *   @param  nStart Offset in Rx buffer of first byte to copy
+        *   @param  nLen Quantity of bytes to copy
         *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44us to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
-        *   @todo   Should we use length instead of nEnd?
         */
-        void DMACopy(uint16_t nStart, uint16_t nEnd, uint16_t nDestination);
+        void DMACopy(uint16_t nDestination, uint16_t nStart, uint16_t nLen);
 
         /** @brief  Swaps the MSB and LSB of a 16-bit integer
         *   @param  nValue 16-bit integer value
