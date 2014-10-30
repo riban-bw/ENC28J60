@@ -302,15 +302,18 @@ class ENC28J60
 
         //Transmission functions
         /** @brief  Starts a transmission transaction
+        *   @param  pMac Optional pointer to byte array representing remote host MAC address. Default is broadcast address FF:FF:FF:FF:FF:FF
+        *   @param  nEthertype Optional Ethertype or length of this Ethernet packet. Default is 0x0800 (IPV4)
         *   @note   Call TxAppend to append data to the transmission transaction
         *   @note   Call TxEnd to close transaction and send packet
+        *   @note   Tx write pointer points to first byte of Ethernet payload
         */
-        void TxBegin();
+        void TxBegin(byte* pMac = NULL, uint16_t nEthertype = 0x0800);
 
         /** @brief  Appends data to a transmission transaction
         *   @param  pData Pointer to data to append
         *   @param  nLen Quantity of bytes to append
-        *   @return <i>bool</i> False on success. True if insufficient space left in Tx buffer
+        *   @return <i>bool</i> True on success. False if insufficient space left in Tx buffer
         *   @note   Call TxBegin before appending data
         *   @note   Call TxEnd to complete transaction and send packet
         *   @todo   Should we return true on success? Should be consistent with other functions.
@@ -333,7 +336,7 @@ class ENC28J60
         *   @note   Offset is relative to start of packet frame data, not the 'per packet control byte' used by the ENC28J60
         *   @todo   Add unit test for TxWriteByte
         */
-        void TxWriteByte(uint16_t nOffset, byte nData, uint16_t nLen);
+        void TxWriteByte(uint16_t nOffset, byte nData);
 
         /** @brief  Write a two byte word to specific position in write buffer
         *   @param  nOffset Position offset from start of Tx buffer, i.e. 0=first byte of buffer
@@ -343,7 +346,7 @@ class ENC28J60
         *   @note   Offset is relative to start of packet frame data, not the 'per packet control byte' used by the ENC28J60
         *   @todo   Add unit test for TxWriteWord
         */
-        void TxWriteWord(uint16_t nOffset, uint16_t nData, uint16_t nLen);
+        void TxWriteWord(uint16_t nOffset, uint16_t nData);
 
         /** @brief  Swap two ranges of bytes in TxBuffer
         *   @param  nOffset1 Position of first range
@@ -378,7 +381,7 @@ class ENC28J60
         /** @brief  Sends whole packet of data
         *   @param  pBuffer Pointer to the data buffer
         *   @param  nLen Quantity of bytes of data to send
-        *   @return <i>bool</i> False on success. Will fail if too much data for single packet.
+        *   @return <i>bool</i> True on success. Will fail if too much data for single packet.
         *   @note   Only supports transmitting one packet at a time. Blocks until previous packet transmission is complete.
         *   @note   Return value does not guarantee successful transmission, only that the data was transfered to Tx buffer and Tx requested to start.
         *   @todo   Should we return true on success? Should be consistent with other functions.

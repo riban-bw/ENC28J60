@@ -780,7 +780,7 @@ uint16_t ENC28J60::RxGetFreeSpace()
 
 //***Packet transmission functions***
 
-void ENC28J60::TxBegin()
+void ENC28J60::TxBegin(byte* pMac, uint16_t nEthertype)
 {
     while(SPIReadRegister(ECON1) & ECON1_TXRTS) //!@todo Consider erata B7.12 which says this may block indefinitely
         ; //Wait for previous transmission (if any) to complete
@@ -793,16 +793,23 @@ void ENC28J60::TxBegin()
     WriteRegWord(EWRPT, TX_BUFFER_PPCB); //Reset start of Tx buffer
     SPIWriteReg(ENC28J60_SPI_WBM, 0); //Reset control word to use default send configuration
     m_nTxLen = 0;
+    byte pBuffer[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}; //Write destination MAC
+    SPIWriteBuf(pMac?pMac:pBuffer, 6);
+    GetMac(pBuffer);
+    SPIWriteBuf(pBuffer, 6); //Write source MAC
+    uint16_t nType = SwapBytes(nEthertype);
+    SPIWriteBuf((byte*)&nType, 2); //Write Ethertype or length in network byte order
+    //Tx write pointer is pointing to first byte of Ethernet payload
 }
 
 bool ENC28J60::TxAppend(byte* pData, uint16_t nLen)
 {
     if(m_nTxLen + nLen > MAX_FRAMELEN)
-        return true; //Insufficient space in Tx buffer
+        return false; //Insufficient space in Tx buffer
     //Write to Tx buffer
     SPIWriteBuf(pData, nLen); //Write data to Tx buffer
     m_nTxLen += nLen;
-    return false;
+    return true;
 }
 
 void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
@@ -837,7 +844,7 @@ void ENC28J60::TxSwap(uint16_t nOffset1, uint16_t nOffset2, uint16_t nLen)
     SPIReadBuf(pBuffer2, nLen);
     TxWrite(nOffset1, pBuffer2, nLen);
     TxWrite(nOffset2, pBuffer1, nLen);
-    WriteRegWord(ERDPT, m_nRxPacketPtr + m_nRxOffset; //Recover Rx read position
+    WriteRegWord(ERDPT, m_nRxPacketPtr + m_nRxOffset); //Recover Rx read position
 }
 
 
@@ -870,8 +877,10 @@ bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
 {
     TxBegin();
     if(TxAppend(pBuffer, nLen))
+    {
+        TxEnd();
         return true;
-    TxEnd();
+    }
     return false;
 }
 
