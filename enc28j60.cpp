@@ -246,6 +246,7 @@ static const uint16_t TX_BUFFER_PPCB    = TX_BUFFER_END - MAX_FRAMELEN - 7; //!<
 static const uint16_t TX_BUFFER_START   = TX_BUFFER_PPCB + 1; //!< Start of transmit buffer which gives space for 1 packet (1514 frame bytes, 7 Tx status bytes)
 static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
 static const uint16_t RX_BUFFER_END     = TX_BUFFER_PPCB - 1; //!< End of recieve circular buffer
+static const uint16_t RX_HEADER_SIZE    = 6; //!< Quantity of bytes in the ENC28J60 recieve header, not part of the received packet
 
 //***SPI bus interface functions***
 
@@ -636,8 +637,6 @@ int16_t ENC28J60::RxBegin()
 {
     if(m_rxHeader.nNextPacket != m_nRxPacketPtr)
         RxEnd(); //End previous packet transaction just in case user did not
-    m_nRxPacketPtr = m_rxHeader.nNextPacket;
-    WriteRegWord(ERDPT, m_nRxPacketPtr); //Advance to next packet
 
     byte nPktCnt = SPIReadRegister(EPKTCNT);
     if(0 == nPktCnt)
@@ -661,6 +660,7 @@ int16_t ENC28J60::RxBegin()
 
     SPIReadBuf((byte*)&m_rxHeader, sizeof(m_rxHeader)); //Get NIC packet header (ENC28J60 data - not packet data)
     m_rxHeader.nSize -= 4; //Reduce size to ignore CRC at end of recieve buffer which is checked by NIC
+    m_nRxPacketPtr += sizeof(m_rxHeader); //Advance pointer to start of Ethernet packet (beyond internal recieve header)
     if(!(m_rxHeader.nStatus & ENC28J60_RX_OK)) //!@todo check whether all errors are detected by OK flag, e.g. length out of range
         return ENC28J60_RX_ERROR;
 
@@ -726,6 +726,8 @@ void ENC28J60::RxEnd()
         WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket - 1);
     SPISetBits(ECON2, ECON2_PKTDEC); //Decrement the packet count
     m_rxHeader.nSize = 0; //Clear packet size - used to indicate we are processing a packet
+    m_nRxPacketPtr = m_rxHeader.nNextPacket;
+    WriteRegWord(ERDPT, m_nRxPacketPtr); //Reset read pointer to start of packet
 }
 
 uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)

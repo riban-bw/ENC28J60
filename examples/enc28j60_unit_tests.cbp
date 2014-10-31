@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="ENC28J60 Tests" />
+		<Option pch_mode="2" />
+		<Option compiler="avr-gcc" />
+		<Build>
+			<Target title="atmega328">
+				<Option output="bin/atmega328/ping.elf" prefix_auto="1" extension_auto="0" />
+				<Option working_dir="" />
+				<Option object_output="obj/atmega328" />
+				<Option type="5" />
+				<Option compiler="avr-gcc" />
+				<Compiler>
+					<Add option="-DF_CPU=16000000L" />
+					<Add option="-D__AVR_ATmega328__" />
+					<Add directory="$(ARDUINO)/hardware/arduino/variants/standard" />
+					<Add directory="include" />
+				</Compiler>
+				<ExtraCommands>
+					<Add after="~/bin/avr-upload.sh $(TARGET_OUTPUT_FILE) promini-328" />
+				</ExtraCommands>
+				<Environment>
+					<Variable name="MCU" value="atmega328" />
+				</Environment>
+			</Target>
+			<Environment>
+				<Variable name="ARDUINO" value="../../.." />
+			</Environment>
+		</Build>
+		<Compiler>
+			<Add option="-O2" />
+			<Add option="-Wmain" />
+			<Add option="-Wall" />
+			<Add option="-mmcu=$(MCU)" />
+			<Add option="-ffunction-sections" />
+			<Add option="-fdata-sections" />
+			<Add option="-fno-exceptions" />
+			<Add option="-DARDUINO=105" />
+			<Add directory="$(ARDUINO)/hardware/arduino/cores/arduino" />
+			<Add directory="$(ARDUINO)/hardware/tools/avr/avr/include" />
+			<Add directory="$(ARDUINO)/contrib/OneWire" />
+			<Add directory="$(ARDUINO)/libraries/Wire" />
+			<Add directory="$(ARDUINO)/libraries/EEPROM" />
+			<Add directory="$(ARDUINO)/libraries/LiquidCrystal" />
+			<Add directory="$(ARDUINO)/contrib/ribanTimer" />
+			<Add directory="$(ARDUINO)/contrib/CapacitiveSensor" />
+			<Add directory="$(ARDUINO)/contrib/AT24cxx" />
+			<Add directory="$(ARDUINO)/contrib/ribanEthernet" />
+		</Compiler>
+		<Linker>
+			<Add option="-mmcu=$(MCU)" />
+			<Add option="-Wl,--gc-sections" />
+			<Add library="m" />
+			<Add library="enc28j60" />
+			<Add library="core" />
+			<Add library="extra" />
+			<Add directory="$(ARDUINO)/lib/$(MCU)" />
+		</Linker>
+		<ExtraCommands>
+			<Add after="avr-size -C --mcu=$(MCU) $(TARGET_OUTPUT_FILE)" />
+		</ExtraCommands>
+		<Unit filename="enc28j60_unit_tests.cpp" />
+		<Unit filename="main.cpp" />
+		<Extensions>
+			<code_completion />
+			<envvars />
+			<debugger />
+			<lib_finder disable_auto="1" />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>
