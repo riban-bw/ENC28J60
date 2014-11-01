@@ -244,7 +244,7 @@ static const uint16_t MAX_FRAMELEN      = 1514; //!< Maximum frame length minus 
 static const uint16_t TX_BUFFER_END     = 0x1FFF; //!< End of transmit buffer which is end of available memory
 static const uint16_t TX_BUFFER_PPCB    = TX_BUFFER_END - MAX_FRAMELEN - 7; //!< Address of 'per packet control byte', immediately before start of tx Buffer
 static const uint16_t TX_BUFFER_START   = TX_BUFFER_PPCB + 1; //!< Start of transmit buffer which gives space for 1 packet (1514 frame bytes, 7 Tx status bytes)
-static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5)
+static const uint16_t RX_BUFFER_START   = 0x0000; //!< Start of recieve circular buffer (erata B7.5 work-around is to place Rx buffer at 0x0000)
 static const uint16_t RX_BUFFER_END     = TX_BUFFER_PPCB - 1; //!< End of recieve circular buffer
 static const uint16_t RX_HEADER_SIZE    = 6; //!< Quantity of bytes in the ENC28J60 recieve header, not part of the received packet
 
@@ -635,14 +635,13 @@ void ENC28J60::SetLedMode(uint16_t nMode)
 
 int16_t ENC28J60::RxBegin()
 {
-    if(m_rxHeader.nNextPacket != m_nRxPacketPtr)
+    if(m_rxHeader.nSize)
         RxEnd(); //End previous packet transaction just in case user did not
 
-    byte nPktCnt = SPIReadRegister(EPKTCNT);
-    if(0 == nPktCnt)
+    if(0 == SPIReadRegister(EPKTCNT))
         return 0; //There are no packets to process
     //!@todo Consider whether flow control should be in RxBegin, RxEnd or elsewhere
-    if(m_bFlowControl)
+    if(m_bFlowControl) //!@todo flow control causing problems
     {
         if(RxGetFreeSpace() < MAX_FRAMELEN && !m_bRxPause)
         {
@@ -657,7 +656,7 @@ int16_t ENC28J60::RxBegin()
             m_bRxPause = false;
         }
     }
-
+    WriteRegWord(ERDPT, m_nRxPacketPtr); //Reset read pointer to start of packet
     SPIReadBuf((byte*)&m_rxHeader, sizeof(m_rxHeader)); //Get NIC packet header (ENC28J60 data - not packet data)
     m_rxHeader.nSize -= 4; //Reduce size to ignore CRC at end of recieve buffer which is checked by NIC
     m_nRxPacketPtr += sizeof(m_rxHeader); //Advance pointer to start of Ethernet packet (beyond internal recieve header)
@@ -719,15 +718,25 @@ void ENC28J60::RxEnd()
 {
     if(0 == m_rxHeader.nSize)
         return; //Not currently processing packet
-    //erata B7.14 - ensure points to odd address
-    if(ERXST == m_rxHeader.nNextPacket)
-        WriteRegWord(ERXRDPT, ERXND);
+    //erata B7.14 - ensure recieve buffer read pointer points to odd address
+
+    //Need to set unavailable space boundary to odd value
+    if(m_rxHeader.nNextPacket & 0x0001)
+    {
+        //Next packet starts at odd address so protect by setting ERXRDPT to it
+        WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket);
+    }
     else
-        WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket - 1);
+    {
+        //Next packet starts at even address so protect by setting ERXRDPT to one less
+        if(RX_BUFFER_START == m_rxHeader.nNextPacket)
+            WriteRegWord(ERXRDPT, RX_BUFFER_END - 2); //Ensure RX_BUFFER_END - X is odd
+        else
+            WriteRegWord(ERXRDPT, m_rxHeader.nNextPacket - 1);
+    }
     SPISetBits(ECON2, ECON2_PKTDEC); //Decrement the packet count
     m_rxHeader.nSize = 0; //Clear packet size - used to indicate we are processing a packet
     m_nRxPacketPtr = m_rxHeader.nNextPacket;
-    WriteRegWord(ERDPT, m_nRxPacketPtr); //Reset read pointer to start of packet
 }
 
 uint16_t ENC28J60::PacketReceive(byte* pBuffer, uint16_t nSize)
@@ -794,13 +803,14 @@ void ENC28J60::TxBegin(byte* pMac, uint16_t nEthertype)
     }
     WriteRegWord(EWRPT, TX_BUFFER_PPCB); //Reset start of Tx buffer
     SPIWriteReg(ENC28J60_SPI_WBM, 0); //Reset control word to use default send configuration
-    m_nTxLen = 0;
     byte pBuffer[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}; //Write destination MAC
     SPIWriteBuf(pMac?pMac:pBuffer, 6);
     GetMac(pBuffer);
     SPIWriteBuf(pBuffer, 6); //Write source MAC
     uint16_t nType = SwapBytes(nEthertype);
     SPIWriteBuf((byte*)&nType, 2); //Write Ethertype or length in network byte order
+    m_nTxLen = 14;
+
     //Tx write pointer is pointing to first byte of Ethernet payload
 }
 
@@ -857,6 +867,22 @@ byte ENC28J60::TxGetStatus()
     if(SPIReadRegister(EIR) & EIR_TXERIF)
         return ENC28J60_TX_FAILED;
     return ENC28J60_TX_SUCCESS;
+}
+
+byte ENC28J60::TxGetError()
+{
+    byte pBuffer[7];
+    //!@todo Set read pointer to start of Tx error
+    WriteRegWord(ERDPT, ReadRegWord(ETXND) + 3); //Position read pointer at Tx Status Vector + 2 (skip Tx byte count)
+    SPIReadBuf(pBuffer, 5); //Read remaining TSV
+    byte nError = 0;
+    //!@todo Populate each bit of nError
+    //!@todo Define error bits as Constants
+    nError |= ((pBuffer[0] & 112) >> 4);
+    nError |= ((pBuffer[1] & 124) << 3);
+
+    WriteRegWord(ERDPT, m_nRxPacketPtr); //Restore read pointer
+    return nError;
 }
 
 void ENC28J60::TxClearError()

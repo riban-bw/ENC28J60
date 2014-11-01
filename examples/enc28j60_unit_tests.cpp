@@ -25,7 +25,6 @@ static const byte TEST_MULTICAST    = 'm';
 static const byte TEST_BROADCAST    = 'b';
 static const byte TEST_FLOW         = 'f';
 static const byte TEST_INIT         = 'i';
-static const byte TEST_VERSION      = 'v';
 
 
 static const uint16_t LED_MODE_NORMAL   = 0x3422;
@@ -106,7 +105,6 @@ void ShowMenu()
     Serial.println(F("b. *Toggle broadcast reception"));
     Serial.println(F("f. *Toggle flow control"));
     Serial.println(F("i. *Initialise"));
-    Serial.println(F("v. *Show silicon version"));
     Serial.println(F("* Does not change current test mode"));
 }
 
@@ -190,21 +188,14 @@ void loop()
             {
                 //Send a UDP packet to global broadcast address port 2000
                 //Start Ethernet header
-                byte pBuffer[20] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}; //Buffer for header. Start by using first 6 bytes for source and destination MAC
                 nic.TxBegin();
-                nic.TxAppend(pBuffer, 6); //Populate destination MAC
-                nic.TxAppend(pMac, 6); //Populate source MAC
-                memset(pBuffer, 0, sizeof(pBuffer)); //Clear buffer for rest of header
-                pBuffer[0] = 0x08; //Ether type IP
-                pBuffer[1] = 0x00;
-                nic.TxAppend(pBuffer, 2); //Populate Ether Type
                 //Start IPV4 header
+                byte pBuffer[20];
+                memset(pBuffer, 0, sizeof(pBuffer)); //Cleare buffer ready for IPV4 header
                 pBuffer[0] = 0x45; //IPV4
                 pBuffer[3] = 20 + 8; //IP length = header (20) + payload (8) = 28 (0x1C)
                 pBuffer[8] = 64; //TTL 0x40
                 pBuffer[9] = 17; //Protocol = UDP (0x11)
-                pBuffer[10] = 0x00; //Checksum - clear to allow correct generation by hardware
-                pBuffer[11] = 0x00;
                 memset(pBuffer + 16, 0xFF, 4); //Set IP global broadcast address
                 nic.TxAppend(pBuffer, 20); //Populate IP header
                 //Start UDP header
@@ -219,12 +210,13 @@ void loop()
                 {
 //                    for(int i = 0; i < 1474; ++i) //!@todo fails for udp payload > 1468
 //                        nic.TxAppend(&cData, 1);
-                    while(!nic.TxAppend(&cData, 1))
+                    while(nic.TxAppend(&cData, 1))
                         ++cData;
                 }
                 //Calculate UDP length
                 uint16_t nLen = ENC28J60::SwapBytes(nic.TxGetSize() - 34);
                 nic.TxWrite(14+20+4, (byte*)&nLen, 2); //UDP size
+                //Calculate IP total length
                 nLen = ENC28J60::SwapBytes(nic.TxGetSize() - 14);
                 nic.TxWrite(14+2, (byte*)&nLen, 2); //IP size
                 //Calculate IP checksum
@@ -323,10 +315,6 @@ void loop()
                 Serial.print(F("Free Rx space = "));
                 Serial.println(nic.RxGetFreeSpace());
                 break;
-//            case TEST_VERSION:
-//                Serial.print(F("Silicon version = "));
-//                Serial.print(nic.GetVersion());
-//                break;
         }
     }
 
@@ -348,44 +336,44 @@ void loop()
         case TEST_RX_PACKET:
         {
             //!@todo check for long packets
-            int16_t nRx = nic.RxBegin(); //Start a recieve transaction and get size of next pending packet
-            if(0 == nRx)
-                return; // No packet available
-            else if(nRx > 0 && nRx < 16)
+            while(int16_t nRx = nic.RxBegin()) //Start a recieve transaction and get size of next pending packet
             {
-                Serial.println("!!Error recieving packet - length < 16");
-            }
-            else if(-1 == nRx)
-            {
-                Serial.print("Recieve error ");
-                Serial.println(nic.RxGetStatus());
-            }
-            else
-            {
-                byte pBuffer[14];
-                nic.RxGetData(pBuffer, 14); //Get the first 14 bytes of data from NIC
-                Serial.print("Recieved packet from ");
-                for(byte i = 6; i < 12; ++i)
+                if(nRx > 0 && nRx < 16)
                 {
-                    //Print the source hardware address
-                    if(pBuffer[i] < 0x10)
-                        Serial.print("0");
-                    Serial.print(pBuffer[i], HEX);
-                    if(i < 11)
-                        Serial.print(":");
+                    Serial.println("!!Error recieving packet - length < 16");
                 }
-                if((int16_t)nic.RxGetPacketSize() != nRx)
-                    Serial.print(" !!Packet size error: ");
+                else if(-1 == nRx)
+                {
+                    Serial.print("Recieve error ");
+                    Serial.println(nic.RxGetStatus());
+                }
                 else
-                    Serial.print(" size=");
-                Serial.print(nRx);
-                if(nic.RxIsBroadcast())
-                    Serial.print(" Broadcast");
-                if(nic.RxIsMulticast())
-                    Serial.print(" Multicast");
-                Serial.println();
+                {
+                    byte pBuffer[14];
+                    nic.RxGetData(pBuffer, 14); //Get the first 14 bytes of data from NIC
+                    Serial.print("Recieved packet from ");
+                    for(byte i = 6; i < 12; ++i)
+                    {
+                        //Print the source hardware address
+                        if(pBuffer[i] < 0x10)
+                            Serial.print("0");
+                        Serial.print(pBuffer[i], HEX);
+                        if(i < 11)
+                            Serial.print(":");
+                    }
+                    if((int16_t)nic.RxGetPacketSize() != nRx)
+                        Serial.print(" !!Packet size error: ");
+                    else
+                        Serial.print(" size=");
+                    Serial.print(nRx);
+                    if(nic.RxIsBroadcast())
+                        Serial.print(" Broadcast");
+                    if(nic.RxIsMulticast())
+                        Serial.print(" Multicast");
+                    Serial.println();
+                }
+                nic.RxEnd();
             }
-            nic.RxEnd();
             break;
         }
     }

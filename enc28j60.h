@@ -41,6 +41,15 @@ static const byte ENC28J60_TX_SUCCESS       = 0x00;
 static const byte ENC28J60_TX_IN_PROGRESS   = 0x01;
 static const byte ENC28J60_TX_FAILED        = 0x02;
 static const int16_t ENC28J60_RX_ERROR      = -1; //!< Indicates error receiving packet
+//Error flags
+static const byte ENC28J60_TXERROR_CRC          = 0x01; //!< Error bit asserted if last Tx packet had CRC error
+static const byte ENC28J60_TXERROR_LEN          = 0x02; //!< Error bit asserted if last Tx packet had length error
+static const byte ENC28J60_TXERROR_SIZE         = 0x04; //!< Error bit asserted if last Tx packet data was > 1500 bytes
+static const byte ENC28J60_TXERROR_DEFER        = 0x08; //!< Error bit asserted if last Tx packet was deferred
+static const byte ENC28J60_TXERROR_EXCESS_DEFER = 0x10; //!< Error bit asserted if last Tx packet was deferred in excess of 24,287 bit times (2.4287 ms)
+static const byte ENC28J60_TXERROR_COLL         = 0x20; //!< Error bit asserted if last Tx packet was aborted after number of collisions exceeded retransmission maximum
+static const byte ENC28J60_TXERROR_LATE_COLL    = 0x40; //!< Error bit asserted if last Tx packet collision occurred beyond the collision window
+static const byte ENC28J60_TXERROR_GIANT        = 0x80; //!< Error bit asserted if last Tx packet frame byte count was greater than maximum frame size
 //Built in self test modes
 static const byte ENC28J60_BIST_RDFM        = 0b0000; //!< Random data fill mode
 static const byte ENC28J60_BIST_RDFM_RACE   = 0b1100; //!< Random data fill mode with race
@@ -316,7 +325,6 @@ class ENC28J60
         *   @return <i>bool</i> True on success. False if insufficient space left in Tx buffer
         *   @note   Call TxBegin before appending data
         *   @note   Call TxEnd to complete transaction and send packet
-        *   @todo   Should we return true on success? Should be consistent with other functions.
         */
         bool TxAppend(byte* pData, uint16_t nLen);
 
@@ -362,6 +370,10 @@ class ENC28J60
         byte TxGetStatus();
 
         //!@todo Add function to get individual TxStatus
+        /** @brief  Get error flags
+        *   @return <i>byte</i> Bitwise flags
+        */
+        byte TxGetError();
 
         /** @brief  Clears all transmit error flags
         */
