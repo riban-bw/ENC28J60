@@ -407,8 +407,6 @@ class ENC28J60
         *   @param  nStart Offset in Rx buffer of first byte to copy
         *   @param  nLen Quantity of bytes to copy
         *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44us to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
-        *   @note   Does not change packet length.
-        *   @todo   Should DMACopy change the packet length?
         */
         void DMACopy(uint16_t nDestination, uint16_t nStart, uint16_t nLen);
 

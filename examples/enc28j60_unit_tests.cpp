@@ -267,9 +267,9 @@ void loop()
                     nic.TxBegin(NULL, 3 + nLen); //Prepare Ethernet II LLC broadcast
                     byte pLlcHeader[] = {0x00,0x00,0x03};
                     nic.TxAppend(pLlcHeader, 3);
-                    nic.TxWriteByte(17 + nLen, 0xFF);
                     nic.DMACopy(17, 0, nLen);
-                    nic.TxEnd(17 + nLen);
+                    Serial.println(nLen);
+                    nic.TxEnd();
                 }
                 break;
             case TEST_RESET:

@@ -830,6 +830,7 @@ void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
     WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
     SPIWriteBuf(pData, nLen);
     WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
+    m_nTxLen = max(m_nTxLen, nOffset - 1 + nLen);
 }
 
 void ENC28J60::TxWriteByte(uint16_t nOffset, byte nData)
@@ -837,6 +838,7 @@ void ENC28J60::TxWriteByte(uint16_t nOffset, byte nData)
     WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
     SPIWriteBuf(&nData, 1);
     WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
+    m_nTxLen = max(m_nTxLen, nOffset - 1);
 }
 
 void ENC28J60::TxWriteWord(uint16_t nOffset, uint16_t nData)
@@ -845,6 +847,7 @@ void ENC28J60::TxWriteWord(uint16_t nOffset, uint16_t nData)
     WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'
     SPIWriteBuf((byte*)&nByteOrder, 2);
     WriteRegWord(EWRPT, TX_BUFFER_START + m_nTxLen); //Reset pointer to where it was
+    m_nTxLen = max(m_nTxLen, nOffset);
 }
 
 void ENC28J60::TxSwap(uint16_t nOffset1, uint16_t nOffset2, uint16_t nLen)
@@ -903,9 +906,6 @@ void ENC28J60::TxEnd(uint16_t nLen)
     else
         WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen - 1); //Define packet length by setting ETXND to point to last byte of frame
     SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
-//    WriteRegWord(ERDPT, TX_BUFFER_START);
-//    byte pBuffer[m_nTxLen];
-//    SPIReadBuf(pBuffer, m_nTxLen);
 }
 
 bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
@@ -951,6 +951,7 @@ void ENC28J60::DMACopy(uint16_t nDestination, uint16_t nStart, uint16_t nLen)
         ;
     if(bRx)
         EnableReception();
+    m_nTxLen = max(m_nTxLen, nDestination + nLen);
 }
 
 uint16_t ENC28J60::SwapBytes(uint16_t nValue)
