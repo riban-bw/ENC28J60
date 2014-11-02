@@ -268,7 +268,6 @@ void loop()
                     byte pLlcHeader[] = {0x00,0x00,0x03};
                     nic.TxAppend(pLlcHeader, 3);
                     nic.DMACopy(17, 0, nLen);
-                    Serial.println(nLen);
                     nic.TxEnd();
                 }
                 break;
