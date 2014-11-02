@@ -975,7 +975,7 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
         return 0;
     if(nStart + nLength > TX_BUFFER_END)
         return 0;
-    DisableReception(); //Errata B7.17 says do not use checksum whilst receiving data
+    bool bRx = DisableReception(); //Errata B7.17 says do not use checksum whilst receiving data
     //Set EDMAST to first byte and EDMAND to last byte
     WriteRegWord(EDMAST, TX_BUFFER_START + nStart); //Packet starts at offset +1, after 'per packet offset'
     WriteRegWord(EDMAND, TX_BUFFER_START + nStart + nLength - 1);
@@ -991,7 +991,8 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
     //Check for completion: DMAST bit cleared, DMAIF bit set and an interrupt generated if enabled.
     while((SPIReadRegister(ECON1) & ECON1_DMAST) && !(SPIReadRegister(EIR) | EIR_DMAIF))
         delay(1);
-    EnableReception(); //Errata B7.17 says do not use checksum whilst receiving data
+    if(bRx)
+        EnableReception(); //Errata B7.17 says do not use checksum whilst receiving data
     //EDMACSH and EDMACSL registers will contain the calculated checksum.
     uint16_t nResult = ReadRegWord(EDMACS);
     return SwapBytes(nResult); //!@todo Should we return network byte order or host byte order? Should be consistent with other functions.
