@@ -483,12 +483,14 @@ void ENC28J60::PowerDown()
 
 void ENC28J60::EnableReception()
 {
-    SPISetBits(ECON1, ECON1_RXEN);
+    SPISetBits(ECON1, ECON1_RXEN | ECON1_CSUMEN);
 }
 
 bool ENC28J60::DisableReception()
 {
     bool bReturn = SPIReadRegister(ECON1) & ECON1_RXEN;
+    while(ReadPhyWord(PHSTAT2) & PHSTAT2_RXSTAT)
+        ; //Wait until not receiving data
     SPIClearBits(ECON1, ECON1_RXEN);
     return bReturn;
 }
@@ -636,7 +638,7 @@ void ENC28J60::SetLedMode(uint16_t nMode)
 int16_t ENC28J60::RxBegin()
 {
     if(m_rxHeader.nSize)
-        RxEnd(); //End previous packet transaction just in case user did not
+        RxEnd(); //End previous packet transaction when user did not
 
     if(0 == SPIReadRegister(EPKTCNT))
         return 0; //There are no packets to process
@@ -662,7 +664,6 @@ int16_t ENC28J60::RxBegin()
     m_nRxPacketPtr += sizeof(m_rxHeader); //Advance pointer to start of Ethernet packet (beyond internal recieve header)
     if(!(m_rxHeader.nStatus & ENC28J60_RX_OK)) //!@todo check whether all errors are detected by OK flag, e.g. length out of range
         return ENC28J60_RX_ERROR;
-
     return m_rxHeader.nSize;
 }
 
@@ -895,10 +896,16 @@ uint16_t ENC28J60::TxGetSize()
     return m_nTxLen;
 }
 
-void ENC28J60::TxEnd()
+void ENC28J60::TxEnd(uint16_t nLen)
 {
-    WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen - 1); //Define packet length by setting ETXND to point to last byte of frame
+    if(nLen)
+        WriteRegWord(ETXND, TX_BUFFER_START + nLen - 1); //Define packet length by setting ETXND to point to last byte of frame
+    else
+        WriteRegWord(ETXND, TX_BUFFER_START + m_nTxLen - 1); //Define packet length by setting ETXND to point to last byte of frame
     SPISetBits(ECON1, ECON1_TXRTS); //Start transmission
+//    WriteRegWord(ERDPT, TX_BUFFER_START);
+//    byte pBuffer[m_nTxLen];
+//    SPIReadBuf(pBuffer, m_nTxLen);
 }
 
 bool ENC28J60::PacketSend(byte* pBuffer, uint16_t nLen)
@@ -920,26 +927,30 @@ void ENC28J60::DMACopy(uint16_t nDestination, uint16_t nStart, uint16_t nLen)
     last byte to copy and the EDMADST registers should point to the first byte in the destination range. The destination range will always be linear, never wrapping at any values except from
     8191 to 0 (the 8-Kbyte memory boundary). Extreme care should be taken when programming the Start and End Pointers to prevent a never ending DMA operation which would overwrite the entire 8-Kbyte buffer.
     */
-    if(nStart >= m_rxHeader.nSize || nStart + nLen >= m_rxHeader.nSize)
-        return;
+    if(nLen < 1 || nStart >= m_rxHeader.nSize || nStart + nLen > m_rxHeader.nSize)
+        return; //Check request fits within available data range. Also check at least one copy (ENC28J60 design does not permit zero)
+    bool bRx = DisableReception();
+    //Set the DMA source start
     if(RX_BUFFER_END - m_nRxPacketPtr < nStart) //wraps receive circular buffer
         WriteRegWord(EDMAST, RX_BUFFER_START + nStart - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
     else
         WriteRegWord(EDMAST, m_nRxPacketPtr + nStart);
-    if(RX_BUFFER_END - m_nRxPacketPtr < nStart + nLen) //wraps receive circular buffer
-        WriteRegWord(EDMAST, RX_BUFFER_START + nStart + nLen - (RX_BUFFER_END - m_nRxPacketPtr) - 1);
+    //Set the DMA source end
+    if(RX_BUFFER_END - m_nRxPacketPtr + 1 < nStart + nLen) //wraps receive circular buffer
+        WriteRegWord(EDMAND, RX_BUFFER_START + nStart + nLen - (RX_BUFFER_END - m_nRxPacketPtr) - 2);
     else
-        WriteRegWord(EDMAST, m_nRxPacketPtr + nStart + nLen);
-
+        WriteRegWord(EDMAND, m_nRxPacketPtr + nStart + nLen - 1);
+    //Set DMA destination start
     WriteRegWord(EDMADST, TX_BUFFER_START + nDestination);
     //Verify that ECON1.CSUMEN is clear.
-    while(SPIReadRegister(ECON1) & ECON1_CSUMEN)
-        ;
+    SPIClearBits(ECON1, ECON1_CSUMEN);
     //Start the DMA copy by setting ECON1.DMAST.
     SPISetBits(ECON1, ECON1_DMAST);
     //When the copy is complete, the DMA hardware will clear the DMAST bit, set the DMAIF bit and generate an interrupt (if enabled). The pointers and the EDMACS registers will not be modified.
     while(SPIReadRegister(ECON1) & ECON1_DMAST)
         ;
+    if(bRx)
+        EnableReception();
 }
 
 uint16_t ENC28J60::SwapBytes(uint16_t nValue)
@@ -964,6 +975,7 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
         return 0;
     if(nStart + nLength > TX_BUFFER_END)
         return 0;
+    DisableReception(); //Errata B7.17 says do not use checksum whilst receiving data
     //Set EDMAST to first byte and EDMAND to last byte
     WriteRegWord(EDMAST, TX_BUFFER_START + nStart); //Packet starts at offset +1, after 'per packet offset'
     WriteRegWord(EDMAND, TX_BUFFER_START + nStart + nLength - 1);
@@ -979,6 +991,7 @@ uint16_t ENC28J60::GetChecksum(uint16_t nStart, uint16_t nLength)
     //Check for completion: DMAST bit cleared, DMAIF bit set and an interrupt generated if enabled.
     while((SPIReadRegister(ECON1) & ECON1_DMAST) && !(SPIReadRegister(EIR) | EIR_DMAIF))
         delay(1);
+    EnableReception(); //Errata B7.17 says do not use checksum whilst receiving data
     //EDMACSH and EDMACSL registers will contain the calculated checksum.
     uint16_t nResult = ReadRegWord(EDMACS);
     return SwapBytes(nResult); //!@todo Should we return network byte order or host byte order? Should be consistent with other functions.

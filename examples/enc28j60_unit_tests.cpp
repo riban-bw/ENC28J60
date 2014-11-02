@@ -17,7 +17,8 @@ static const byte TEST_TX_MAX_PACKET    = '4';
 static const byte TEST_DUPLEX       = '5';
 static const byte TEST_BIST         = '6';
 static const byte TEST_FREE         = '7';
-static const byte TEST_DUMP         = 'd';
+static const byte TEST_CRC          = 'c';
+static const byte TEST_DMA          = 'd';
 static const byte TEST_RESET        = 'r';
 static const byte TEST_POWER        = 'p';
 static const byte TEST_UNICAST      = 'u';
@@ -97,7 +98,8 @@ void ShowMenu()
     Serial.println(F("5. *Toggle duplex"));
     Serial.println(F("6. *Built-in self tests"));
     Serial.println(F("7. *Show free Rx buffer space"));
-//    Serial.println(F("d. *Dump registers"));
+    Serial.println(F("c. *CRC test"));
+    Serial.println(F("d. *DMA test"));
     Serial.println(F("r. *Reset NIC"));
     Serial.println(F("p. *Toggle power"));
     Serial.println(F("u. *Toggle unicast reception"));
@@ -228,9 +230,48 @@ void loop()
                 Serial.println(nic.TxGetSize());
                 break;
             }
-//            case TEST_DUMP:
-//                DumpRegisters();
-//                break;
+            case TEST_CRC:
+                {
+                    uint16_t nBufferSize = 100;
+                    byte pBuffer[nBufferSize];
+                    for(byte i = 0; i < sizeof(pBuffer); ++i)
+                        pBuffer[i] = i;
+                    nic.TxWrite(0, pBuffer, sizeof(pBuffer));
+                    uint16_t nChecksum = nic.GetChecksum(0, sizeof(pBuffer));
+                    uint32_t nResult = 0;
+                    do
+                    {
+                        for(byte i = 0; i < sizeof(pBuffer); i+=2)
+                        {
+                            uint16_t nValue = ((pBuffer[i]) << 8) + (pBuffer[i+1] & 0xFF);
+                            nResult += nValue;
+                        }
+                        Serial.println(nResult, HEX);
+                        nResult = (nResult & 0xFFFF) + (nResult >> 16);
+                    } while(nResult > 0xFFFF);
+                    uint16_t nCalcChecksum = nResult;
+                    nCalcChecksum = ~nCalcChecksum;
+                    nCalcChecksum = ENC28J60::SwapBytes(nCalcChecksum);
+                    Serial.println((nChecksum == nCalcChecksum)?"CRC Pass":"CRC Fail"); //!@todo Bigger buffer and correct checksum value
+                }
+                break;
+            case TEST_DMA:
+                {
+                    uint16_t nLen = 0;
+                    Serial.println("Waiting to recieve packet..");
+                    while(0 == nLen)
+                        nLen = nic.RxBegin();
+                    byte pBuffer[nLen];
+                    nic.RxGetData(pBuffer, nLen, 0);
+                    Serial.println("Bouncing recieved packet");
+                    nic.TxBegin(NULL, 3 + nLen); //Prepare Ethernet II LLC broadcast
+                    byte pLlcHeader[] = {0x00,0x00,0x03};
+                    nic.TxAppend(pLlcHeader, 3);
+                    nic.TxWriteByte(17 + nLen, 0xFF);
+                    nic.DMACopy(17, 0, nLen);
+                    nic.TxEnd(17 + nLen);
+                }
+                break;
             case TEST_RESET:
                 nic.Reset();
                 Serial.println(" - Reset");

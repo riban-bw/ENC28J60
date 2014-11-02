@@ -385,10 +385,11 @@ class ENC28J60
         uint16_t TxGetSize();
 
         /** @brief  Ends a transmission transaction and sends packet
+        *   @param  nLen Optional quantity of bytes in packet. Default is to use TxAppend pointer
         *   @note   Call TxBegin to start transaction
         *   @note   Call TxAppend to append data to the transmission transaction
         */
-        void TxEnd();
+        void TxEnd(uint16_t nLen = 0);
 
         /** @brief  Sends whole packet of data
         *   @param  pBuffer Pointer to the data buffer
@@ -402,10 +403,12 @@ class ENC28J60
 
         //Misc functions
         /** @brief  Performs driect memory access transfer of data from Rx buffer to Tx buffer
-        *   @param  nDestination Offset in Tx buffer of first byte to copy to
+        *   @param  nDestination Offset in Tx buffer of first byte to write
         *   @param  nStart Offset in Rx buffer of first byte to copy
         *   @param  nLen Quantity of bytes to copy
         *   @note   After the DMA module has been initialized and has begun its copy, two main ENC28J60 clock cycles will be required for each byte copied. As a result, if a maximum size 1518-byte packet was copied, the DMA module would require slightly more than 121.44us to complete. The time required to copy a minimum size packet of 64 bytes would be dominated by the time required to configure the DMA.
+        *   @note   Does not change packet length.
+        *   @todo   Should DMACopy change the packet length?
         */
         void DMACopy(uint16_t nDestination, uint16_t nStart, uint16_t nLen);
 
@@ -425,7 +428,7 @@ class ENC28J60
         /** @brief  Calculate a checksum of a range of the Tx buffer
         *   @param  nStart Position of first byte of Tx buffer to checksum
         *   @param  nLength Quantity of bytes to checksum
-        *   @return <i>uint16_t</i> Resulting checksum value
+        *   @return <i>uint16_t</i> Resulting checksum value in network byte order
         */
         uint16_t GetChecksum(uint16_t nStart, uint16_t nLength);
 
