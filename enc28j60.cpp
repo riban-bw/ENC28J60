@@ -825,6 +825,17 @@ bool ENC28J60::TxAppend(byte* pData, uint16_t nLen)
     return true;
 }
 
+bool ENC28J60::TxAppendByte(byte nData)
+{
+    return TxAppend(&nData, 1);
+}
+
+bool ENC28J60::TxAppendWord(uint16_t nData)
+{
+    uint16_t nByteOrder = SwapBytes(nData);
+    return TxAppend((byte*)&nByteOrder, 2);
+}
+
 void ENC28J60::TxWrite(uint16_t nOffset, byte* pData, uint16_t nLen)
 {
     WriteRegWord(EWRPT, TX_BUFFER_START + nOffset); //packet data starts at offset +1, after 'per packet control byte'

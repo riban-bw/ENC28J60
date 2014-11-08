@@ -328,6 +328,18 @@ class ENC28J60
         */
         bool TxAppend(byte* pData, uint16_t nLen);
 
+        /** @brief  Appends a single byte to a transmission transaction
+        *   @param  nData Value to append
+        *   @return <i>bool</i> True on success. False if insufficient space left in Tx buffer
+        */
+        bool TxAppendByte(byte nData);
+
+        /** @brief  Appends a 16-bit word to a transmission transaction
+        *   @param  nData Value to append
+        *   @return <i>bool</i> True on success. False if insufficient space left in Tx buffer
+        */
+        bool TxAppendWord(uint16_t nData);
+
         /** @brief  Write data to specific position in write buffer
         *   @param  nOffset Position offset from start of Tx buffer, i.e. 0=first byte of buffer
         *   @param  pData Pointer to data to be written
